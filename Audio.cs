@@ -19,7 +19,7 @@ static class Audio
     [
         ("heart", Heart, 2), ("drip", Drip, 3), ("plop", Plop, 2),
         ("bell", Bell, 2), ("thunk", Thunk, 1), ("chime", Chime, 2), ("clack", Clack, 3),
-        ("lash", Lash, 2), ("groan_1", () => Groan(1), 1), ("groan_2", () => Groan(2), 1),
+        ("lash", Lash, 2), ("grunt_1", () => Grunt(1), 1), ("grunt_2", () => Grunt(2), 1), ("hiss", Hiss, 1),
         ("scream_far_1", () => Scream(1, true), 1), ("scream_far_2", () => Scream(2, true), 1),
         ("scream_far_3", () => Scream(3, true), 1), ("scream_crowd", Crowd, 1), ("scream_near", () => Scream(1, false), 1),
         ("brick", Brick, 3), ("wound", WoundSwell, 1),
@@ -246,7 +246,7 @@ static class Audio
         return o;
     }
 
-    // Glottal source: band-limited-ish saw with jitter and breath, for groans and screams.
+    // Glottal source: band-limited-ish saw with jitter and breath, for screams.
     static float[] Voice(double sec, Func<double, double> f0, double breath, Random r)
     {
         var o = Buf(sec);
@@ -398,16 +398,45 @@ static class Audio
         return Normalize(Reverb(o, 0.2, 0.8, 0.7), 0.85);
     }
 
-    // A muffled male groan through cloth: falling pitch, vowel formants, breath.
-    static float[] Groan(int v)
+    // Pain through clenched teeth: an abrupt, strangled "nngh". Creaky, irregular pulses (vocal fry) and a closed,
+    // nasal mouth; the breath is cut off rather than let out. Short on purpose: a long, smooth vowel reads as a moan.
+    static float[] Grunt(int v)
     {
         var r = new Random(10 + v);
-        double sec = 1.1, f = v == 1 ? 112 : 92;
-        var src = Voice(sec, t => f - 22 * t, 0.25, r);
-        (double, double, double)[] vowel = v == 1 ? [(620, 5, 1), (1080, 8, 0.6), (2400, 10, 0.2)] : [(450, 5, 1), (800, 8, 0.6), (2500, 10, 0.15)];
-        var o = Formants(src, vowel);
-        Envelope(o, t => Math.Min(1, t / 0.15) * (t > 0.6 ? Math.Exp(-(t - 0.6) * 6) : 1));
-        return Normalize(Reverb(Lowpass(o, 1800), 0.25, 0.82, 1.0), 0.6);
+        var o = Buf(0.45);
+        double t0 = 0, f0 = v == 1 ? 135 : 115;
+        while (t0 < 0.32)
+        {
+            double f = f0 * (t0 < 0.05 ? 1 : 0.78) * (1 + Noise(r) * 0.12);   // pitch breaks down, period jitters
+            double amp = 0.6 + 0.4 * r.NextDouble();                          // shimmer
+            for (int k = 0; k < 400; k++)                                     // one sharp, pressed glottal pulse
+            {
+                int i = (int)(t0 * Rate) + k;
+                if (i >= o.Length) break;
+                o[i] += (float)(amp * Math.Exp(-k / 18.0) * (k < 3 ? 1 : 0.6));
+            }
+            t0 += 1 / f;
+        }
+        for (int i = 0; i < o.Length; i++) o[i] += (float)(Noise(r) * 0.08);  // strain in the throat
+        var voiced = Formants(o, v == 1 ? [(280, 4, 1), (1450, 7, 0.35), (2300, 9, 0.15)] : [(250, 4, 1), (1250, 7, 0.3), (2500, 9, 0.12)]);
+        Envelope(voiced, t => Math.Min(1, t / 0.012)                           // it hits, it doesn't swell
+                              * (t > 0.11 && t < 0.15 ? 0.45 : 1)               // the breath catches
+                              * (t > 0.2 ? Math.Exp(-(t - 0.2) * 14) : 1));
+        var exhale = Buf(0.45);
+        for (int i = 0; i < exhale.Length; i++) exhale[i] = (float)(Noise(r) * Math.Exp(-Math.Pow((T(i) - 0.3) / 0.06, 2)) * 0.25);
+        Add(voiced, Lowpass(exhale, 900));
+        return Normalize(Reverb(Lowpass(voiced, 1300), 0.22, 0.8, 0.7), 0.55);
+    }
+
+    // A sharp breath drawn in through the teeth after the lash lands.
+    static float[] Hiss()
+    {
+        var r = new Random(15);
+        var o = Buf(0.35);
+        for (int i = 0; i < o.Length; i++) o[i] = (float)Noise(r);
+        var s = Add(Bandpass(o, 5200, 2), Bandpass(o, 2900, 3), 0, 0.5);
+        Envelope(s, t => Math.Min(1, t / 0.035) * Math.Exp(-Math.Max(0, t - 0.06) * 13) * (1 + 0.25 * Math.Sin(t * 90)));  // a shudder in it
+        return Normalize(Reverb(s, 0.15, 0.75, 0.5), 0.35);
     }
 
     // A scream: a rising, breaking, vibrato-shaken pitch through an open vowel. Far = filtered by stone and distance.

@@ -80,7 +80,7 @@ You are **the Sexton of the Last Bell**. You rang the bell that called the knife
   - A PNG with the same name in `assets/sprites/` replaces the generated texture, which is the path to real pixel art.
 - **Sound:**
   - Everything is synthesized in `Audio.cs` at startup, on a background thread, at 44.1 kHz mono. The building blocks are filters, a Freeverb-style cathedral reverb, bell partials and formant voices.
-  - There are two looping beds (the cathedral drone, and candles that scale with Tallow Saints) and event sounds for the heartbeat, drips, the bell, the lash, groans, screams, bricks and wounds.
+  - There are two looping beds (the cathedral drone, and candles that scale with Tallow Saints) and event sounds for the heartbeat, drips, the bell, the lash, pain grunts and hisses, screams, bricks and wounds.
   - `--dump-sounds [dir]` exports the WAVs. A file with the same name in `assets/sounds/` (.wav, .ogg or .mp3) replaces any of them.
   - The panic key silences the game instantly and M mutes. Settings has volume, screams, silent-when-unfocused and a sound tester.
 - **Fonts:** UnifrakturMaguntia (blackletter, used for titles and names) and IM Fell DW Pica (body text). Both are bundled in `assets/fonts` under the SIL Open Font License, and their licence files sit next to them.

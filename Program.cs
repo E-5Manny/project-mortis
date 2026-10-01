@@ -16,7 +16,7 @@ static class App
     static float HoldMortify, HoldAbandon;
     static string? RevealWound;
     static float ScreamIn = 45;
-    static int SoundTest, BricksHeard, Lashes;
+    static int SoundTest, BricksHeard;
     static float T;  // animation clock
     static float AccountScroll;
     static float HoldImmure, HoldReset;
@@ -261,7 +261,9 @@ static class App
         if (Sexton.Struck)
         {
             Audio.Play("lash", 0.75f, 0.9f + 0.2f * Random.Shared.NextSingle(), 0.45f);
-            if (++Lashes % 3 == 0) Audio.PlayAny("groan_", 0.5f);
+            int voice = Random.Shared.Next(4);  // mostly he takes it in silence
+            if (voice == 0) Audio.PlayAny("grunt_", 0.45f);
+            else if (voice == 1) Audio.Play("hiss", 0.4f, 0.9f + 0.2f * Random.Shared.NextSingle());
         }
         ScreamIn -= dt;
         if (ScreamIn > 0) return;
