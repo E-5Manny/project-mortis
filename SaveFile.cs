@@ -12,17 +12,21 @@ static class SaveFile
     public static string Serialize<T>(T state) => JsonSerializer.Serialize(state, Opts);
     public static T? Deserialize<T>(string json) => JsonSerializer.Deserialize<T>(json, Opts);
 
-    // Tries save.json, then save.bak. If both exist but are unreadable, the broken main file is kept aside, never overwritten.
+    // Tries save.json, then save.json.bak. A save.json that won't load is moved aside (never deleted) even when the .bak
+    // rescues us: otherwise the next Save's File.Replace would push the broken file over the good backup.
     public static T? Load<T>() where T : class
     {
-        foreach (var path in new[] { Main, Bak })
-        {
-            if (!File.Exists(path)) continue;
-            try { if (Deserialize<T>(File.ReadAllText(path)) is { } s) return s; }
-            catch (Exception) { }
-        }
+        if (TryRead<T>(Main) is { } main) return main;
+        var bak = TryRead<T>(Bak);
         if (File.Exists(Main)) File.Move(Main, Path.Combine(Dir, $"save.corrupt-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}.json"));
-        return null;
+        return bak;
+    }
+
+    static T? TryRead<T>(string path) where T : class
+    {
+        if (!File.Exists(path)) return null;
+        try { return Deserialize<T>(File.ReadAllText(path)); }
+        catch (Exception) { return null; }
     }
 
     public static void Save<T>(T state)

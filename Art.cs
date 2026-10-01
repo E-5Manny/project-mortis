@@ -17,6 +17,7 @@ static class Art
         HeartFace = Get("heart_face", () => Make(64, 64, (x, y) => HeartPixel(x, y, true)));
         foreach (var r in Data.Rites) Icons[r.Id] = Get("rite_" + r.Id, () => Icon(r.Id));
         Sexton.Init();
+        Prophet.Init();
     }
 
     public static Texture2D Get(string name, Func<Texture2D> generate)
@@ -48,6 +49,91 @@ static class Art
         Save("wall", Wall); Save("heart", Heart); Save("heart_face", HeartFace);
         foreach (var (id, t) in Icons) Save("rite_" + id, t);
         Sexton.Dump(Save);
+        Prophet.Dump(Save);
+        var icon = AppIcon(16); ExportImage(icon, Path.Combine(dir, "icon.png")); UnloadImage(icon);
+        WriteIco(Path.Combine(dir, "icon.ico"));
+    }
+
+    // --- the app icon: a 16x16 Orthodox cross in tarnished gold. The ink outline is added in code. ---
+    // The footrest rises on the viewer's left, as in the ☦ glyph. Override: assets/sprites/icon.png.
+    // Copy the dumped icon.ico over assets/icon.ico to change the exe's icon too (the csproj embeds it).
+    static readonly string[] CrossRows =
+    [
+        "................",
+        ".......hl.......",
+        ".......lm.......",
+        "....hllllmmd....",
+        ".......lm.......",
+        ".......lm.......",
+        ".hllllllllllmmm.",
+        ".mmmmmmmmdddddd.",
+        ".......lm.......",
+        ".......lm.......",
+        "....hlllm.......",
+        "......llmmm.....",
+        ".......lm.mmd...",
+        ".......lm...r...",
+        ".......md.......",
+        "............r...",
+    ];
+
+    public static Image AppIcon(int size)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "assets", "sprites", "icon.png");
+        Image img;
+        if (File.Exists(path)) { img = LoadImage(path); ImageFormat(ref img, PixelFormat.UncompressedR8G8B8A8); }
+        else
+        {
+            img = GenImageColor(16, 16, Color.Blank);
+            bool Metal(int x, int y) => x >= 0 && y >= 0 && x < 16 && y < 16 && CrossRows[y][x] is not ('.' or 'r');
+            for (int y = 0; y < 16; y++)
+                for (int x = 0; x < 16; x++)
+                {
+                    Color? c = CrossRows[y][x] switch
+                    {
+                        'h' => new Color(246, 220, 150, 255), 'l' => new Color(206, 160, 74, 255),
+                        'm' => Brass, 'd' => new Color(78, 48, 22, 255), 'r' => BloodC,
+                        _ => null,
+                    };
+                    if (c == null && (Metal(x - 1, y) || Metal(x + 1, y) || Metal(x, y - 1) || Metal(x, y + 1))) c = Ink;  // 4-way: open corners keep the bars apart at 16px
+                    if (c is Color col) ImageDrawPixel(ref img, x, y, col);
+                }
+        }
+        ImageResizeNN(ref img, size, size);  // ponytail: nearest-neighbour; an override painted larger than 16px will lose detail at 16
+        return img;
+    }
+
+    public static void SetWindowIcon()
+    {
+        Image[] imgs = [AppIcon(16), AppIcon(32), AppIcon(48)];  // GLFW picks the closest size for title bar and taskbar
+        SetWindowIcons(imgs);
+        foreach (var i in imgs) UnloadImage(i);
+    }
+
+    // An .ico holding PNG entries (fine on Vista and later): header, one directory entry per size, then the PNGs.
+    static void WriteIco(string path)
+    {
+        var pngs = new List<(int size, byte[] data)>();
+        foreach (int size in new[] { 16, 32, 48, 256 })
+        {
+            var img = AppIcon(size);
+            var tmp = Path.Combine(Path.GetTempPath(), $"mortis_icon_{size}.png");
+            ExportImage(img, tmp);
+            UnloadImage(img);
+            pngs.Add((size, File.ReadAllBytes(tmp)));
+            File.Delete(tmp);
+        }
+        using var w = new BinaryWriter(File.Create(path));
+        w.Write((short)0); w.Write((short)1); w.Write((short)pngs.Count);
+        int offset = 6 + 16 * pngs.Count;
+        foreach (var (size, data) in pngs)
+        {
+            w.Write((byte)(size % 256)); w.Write((byte)(size % 256));  // 0 means 256
+            w.Write((byte)0); w.Write((byte)0); w.Write((short)1); w.Write((short)32);
+            w.Write(data.Length); w.Write(offset);
+            offset += data.Length;
+        }
+        foreach (var (_, data) in pngs) w.Write(data);
     }
 
     // --- drawing ---
@@ -291,6 +377,26 @@ static class Art
                 DrawPixel(7, 7, SaltC); DrawPixel(17, 7, SaltC);
                 DrawLine(10, 8, 14, 8, Ink);
                 DrawPixel(7, 22, BloodC); DrawPixel(17, 22, BloodC);
+                break;
+            case "gibbet":
+                var iron = new Color(74, 64, 58, 255);
+                DrawLine(12, 0, 12, 4, iron);                                      // the chain
+                DrawCircle(13, 9, 2.4f, BoneC);                                    // the head, lolling
+                DrawRectangle(10, 11, 5, 7, BoneC);
+                DrawLine(10, 18, 9, 20, BoneC); DrawLine(14, 18, 15, 20, BoneC);  // legs dangling
+                DrawRectangleLines(6, 4, 12, 17, iron);
+                for (int x = 9; x < 18; x += 3) DrawLine(x, 4, x, 20, iron);       // bars, in front of him
+                DrawPixel(12, 21, BloodC); DrawPixel(12, 23, BloodC);
+                break;
+            case "bishop":
+                DrawLine(19, 3, 19, 23, Brass);                                    // crozier
+                DrawLine(19, 3, 21, 3, Brass); DrawPixel(21, 4, Brass); DrawPixel(20, 5, Brass);
+                Tri(new(11, 0), new(6, 8), new(16, 8), BoneC);                     // mitre
+                DrawLine(7, 7, 15, 7, Brass);
+                DrawRectangle(8, 8, 6, 4, Ink);                                    // no face under it
+                Tri(new(11, 11), new(4, 23), new(18, 23), new Color(92, 20, 24, 255));  // robe
+                DrawEllipse(11, 17, 2, 3, Ink);                                    // the emptied chest
+                DrawPixel(11, 20, BloodC); DrawPixel(10, 21, BloodC); DrawPixel(12, 22, BloodC);
                 break;
         }
         EndTextureMode();

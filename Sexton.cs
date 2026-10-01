@@ -118,7 +118,7 @@ static class Sexton
 
     static float HalfWidth(float y) => 12.5f - 4f * (y - 19) / 24;  // torso tapers from shoulders (y 19) to waist (y 43)
 
-    static readonly Color Outline = new(10, 6, 6, 255);
+    internal static readonly Color Outline = new(10, 6, 6, 255);
     static readonly Color[] HoodRamp = [new(22, 16, 15, 255), new(36, 27, 24, 255), new(54, 41, 35, 255), new(76, 59, 49, 255)];
     static readonly Color[] SkinRamp = [new(74, 44, 36, 255), new(114, 73, 58, 255), new(156, 109, 86, 255), new(192, 146, 116, 255)];
     static readonly Color[] RobeRamp = [new(28, 22, 19, 255), new(44, 35, 29, 255), new(62, 50, 41, 255), new(82, 68, 55, 255)];
@@ -126,13 +126,13 @@ static class Sexton
     static readonly Color Wood = new(58, 37, 24, 255), Leather = new(46, 29, 21, 255), Knot = new(28, 17, 13, 255);
 
     static readonly float[,] Bayer = { { 0, 8, 2, 10 }, { 12, 4, 14, 6 }, { 3, 11, 1, 9 }, { 15, 7, 13, 5 } };
-    static Color Tone(Color[] ramp, float light, int x, int y)
+    internal static Color Tone(Color[] ramp, float light, int x, int y)
     {
         float d = (Bayer[y & 3, x & 3] / 16f - 0.5f) * 0.5f;
         return ramp[Math.Clamp((int)MathF.Floor(light * 3.99f + d), 0, 3)];
     }
 
-    static float SegDist(Vector2 p, Vector2 a, Vector2 b)
+    internal static float SegDist(Vector2 p, Vector2 a, Vector2 b)
     {
         var ab = b - a;
         float t = Math.Clamp(Vector2.Dot(p - a, ab) / Math.Max(ab.LengthSquared(), 1e-4f), 0, 1);

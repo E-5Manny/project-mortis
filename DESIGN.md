@@ -1,6 +1,6 @@
 # MORTIS: The Long Dying
 
-A desk-side idle game of grimdark devotion. C# / .NET 10 + Raylib-cs. Fixed 630×520 window, no audio, no art assets.
+A desk-side idle game of grimdark devotion. C# / .NET 10 + Raylib-cs. Fixed 630×520 window. Art and sound are generated in code, with file overrides.
 
 ## Premise
 
@@ -45,6 +45,7 @@ You are **the Sexton of the Last Bell**. You rang the bell that called the knife
 | The Lattice | The tree you spend Marrow on (v0.3). |
 | Admissions | Achievements. Each one is a line of guilt worth +1% (v0.4). |
 | Mortification | The Sexton leaves the bell to scourge himself for 15m, 1h, 4h or 8h. No Dolor is made until it ends. Unlocks after the first Immurement. |
+| Visitors / Biddings | Strangers knock at the bell-tower door, never interrupting, and offer Biddings in a visual-novel dialog. Accepting brings a burden while it lasts, a boon if you keep it, and sometimes a curse if you fail. The first visitor is the Lampless Prophet. |
 | Wounds | What Mortification gives. They come in three depths (Shallow, Deep, Grievous) and five ranks, and deeper ones carry a trade-off. Three can be open at once, and they persist through Immurement. |
 | Ordeals | Challenge runs (v0.6). |
 | The Unnaming / Ashen Names | Prestige layer 2 and its currency (v0.7). |
@@ -84,7 +85,7 @@ You are **the Sexton of the Last Bell**. You rang the bell that called the knife
   - `--dump-sounds [dir]` exports the WAVs. A file with the same name in `assets/sounds/` (.wav, .ogg or .mp3) replaces any of them.
   - The panic key silences the game instantly and M mutes. Settings has volume, screams, silent-when-unfocused and a sound tester.
 - **Fonts:** UnifrakturMaguntia (blackletter, used for titles and names) and IM Fell DW Pica (body text). Both are bundled in `assets/fonts` under the SIL Open Font License, and their licence files sit next to them.
-- **Self-test:** `Mortis.exe --selftest | more` runs formula and save asserts plus a greedy-player sim, which should reach the first Immurement in about 50 min. The exit code is the number of failures.
+- **Self-test:** `Mortis.exe --selftest | more` runs formula and save asserts plus a greedy-player sim, which should reach the first Immurement in 70 to 110 min (currently about 1h27m, about 1h40m for a person). The exit code is the number of failures.
 - **Data:** Rites and Sacraments are plain rows. A Sacrament has a `Target` (a rite id, `all` or `toll`) and a `Mult` function, and `Game.MultFor(target)` multiplies all the bought ones together. S5 and S8 are checked by id.
 - **Numbers:** `double` everywhere. It must be swapped for a mantissa/exponent type before values pass 1e300, which is expected around v0.7.
 - **Reset:** an explicit `ResetRun()`. It gets generalised into `Reset(layer)` only when layer 2 arrives in v0.7.
@@ -101,21 +102,25 @@ You are **the Sexton of the Last Bell**. You rang the bell that called the knife
 
 ## Roadmap (one new layer per milestone)
 
-1. **v0.1 The First Stone.** Dolor, 6 Rites, 12 Sacraments, Toll charges, Immurement → Marrow, 10 stanzas. First prestige takes about 45–100 min of casual play.
-2. **v0.2 Deacons.** Automation delivered through **Vows**, milestone rewards at 10/25/50/100/200 total Marrow earned:
-   - autobuy Rites 1–3, then all Rites;
-   - autobuy Sacraments;
-   - +2 Toll charges;
-   - start each run with 1,000 Dolor;
-   - auto-Immure at N pending Marrow.
+*Deeper runs (2026-10-01):* there are now 8 Rites (adding the Gibbet Orchard and the Hollow Bishop), 24 Sacraments and a gate of 4e10. The first Immurement takes about 1h27m for the greedy sim, which is about 1h40m for a person. Version-1 saves are migrated by scaling lifetime and run Dolor with the gate. `MORTIS_SIM_TIMELINE=1 Mortis.exe --selftest` prints the unlock timeline.
 
-   It comes first because automation matters most to a player at a desk.
-3. **v0.3 The Lattice.** Spend Marrow on a tree of about 15 nodes. The passive bonus keeps counting Marrow *earned*, not Marrow held, so spending never costs anything.
-4. **v0.4 Admissions.** About 40 achievements. Each is one line of the Sexton's guilt and gives +1% to all production as a single modifier source.
-   - This milestone also adds **Omens**: an optional altar sign that lasts 120 s. It never spawns while hidden, can be switched off, and grants either ×3 for 60 s or 15 minutes of production.
+1. **v0.1 The First Stone.** Dolor, 6 Rites, 12 Sacraments, Toll charges, Immurement → Marrow, 10 stanzas. First prestige takes about 45–100 min of casual play.
+2. **v0.2 Deacons** (shipped 2026-10-01). Six Vows, granted by total Marrow earned (10, 25, 50, 100, 200, 400):
+   - the first Deacon buys Kneelers and Choirs, then a Deacon buys every Rite;
+   - Sacraments are auto-taken;
+   - the Bell-Boy adds +2 charges and rings a full rope;
+   - each run begins with 1M Dolor;
+   - auto-Immurement at a chosen Marrow ratio.
+
+   Each Vow can be switched off. Deacons buy the best-value Rite, but only buy their own Rites when cheap (2% of Dolor) if a better buy exists. They keep buying while you're away, simulated in one-minute steps.
+3. **v0.3 The Lattice** (shipped 2026-10-01). A root plus three branches of five (Flesh, Bell, Bone), 181 Marrow in all. Spending Marrow never lowers the passive bonus, which counts Marrow earned.
+4. **v0.4 Admissions and Omens** (shipped 2026-10-01).
+   - **Admissions:** 43 lines of guilt, each +1% to all production.
+   - **Omens:** an eye opens in the wall every 5 to 15 minutes while the window is visible. Clicking it grants ×3 for 60s, 15 minutes of production, or a full rope. Omens can be switched off and never appear during Mortification.
+*Visitors (2026-10-01):* the Lampless Prophet knocks every 15 to 30 minutes after the first Immurement, never during Mortification or while a Bidding is active. He waits 10 minutes. His dialog is typed out, Accept or Refuse sits on the last page, and refusing is free for now. Content lives in `assets/biddings.json`, with objectives toll, beat, buy, gather, abstain, silence and mortify. Bidding timers run only while the window is visible. Ideas for later: more visitors, branching dialog, consequences for refusing, multi-step arcs.
 5. **v0.5 Mortification** (shipped early, on 2026-10-01). Unlocked by the first Immurement, it trades production time for Wounds: 11 wounds across 3 depths, ranks I to V, 3 open slots. The Sexton view shows the animated 16-bit sprite.
 6. **v0.6 Ordeals.** Six challenge runs that each impose a harsh rule: no Tolling, costs ×2, or only three Rites. Each one you complete grants a unique permanent modifier.
-7. **v0.7 The Unnaming (layer 2).** Burn your name from the rolls. This resets Marrow, the Lattice and Vows in exchange for **Ashen Names**, which unlock Rites 7–8 and per-Rite multipliers. It also introduces **Creeds**, a per-run choice between Keeping (idle-leaning) and Letting (active-leaning). The `Num` type swaps to mantissa/exponent here.
+7. **v0.7 The Unnaming (layer 2).** Burn your name from the rolls. This resets Marrow, the Lattice and Vows in exchange for **Ashen Names**, which unlock new Rites beyond the Hollow Bishop (still to be designed) and per-Rite multipliers. It also introduces **Creeds**, a per-run choice between Keeping (idle-leaning) and Letting (active-leaning). The `Num` type swaps to mantissa/exponent here.
 8. **v0.8 The Anatomy.** A map of His body drawn in text and rectangles: chambers, wounds, the ossified lung. Each node costs **Ichor** and opens one branch.
 9. **v1.0 The Last Toll.** A meter for His final death appears. There are two endings:
    - **Keeper:** He lives forever, with infinite scaling.

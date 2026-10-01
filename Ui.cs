@@ -32,6 +32,7 @@ static class Ui
     public static bool Clicked { get; private set; }  // a widget consumed this frame's click
     public static bool Blocked;                        // an overlay owns input; widgets are inert
     public static string? HoverText;                   // detail line for the whisper bar
+    public static Rectangle? Clip;                     // while set, widgets only respond inside it (scrolled lists)
 
     public static void Init()
     {
@@ -106,7 +107,9 @@ static class Ui
     }
 
     // --- widgets ---
-    public static bool Hover(Rectangle r) => !Blocked && CheckCollisionPointRec(GetMousePosition(), r);
+    public static bool Hover(Rectangle r) => !Blocked && CheckCollisionPointRec(GetMousePosition(), r)
+                                             && (Clip is not { } c || CheckCollisionPointRec(GetMousePosition(), c));
+    public static void Consume() => Clicked = true;
 
     public static bool Pressed(Rectangle r)
     {
@@ -176,7 +179,7 @@ static class Ui
         s = Math.Max(0, s);
         long t = (long)s;
         if (t < 60) return $"{t}s";
-        if (t < 3600) return $"{t / 60}m {t % 60}s";
+        if (t < 3600) return t % 60 == 0 ? $"{t / 60}m" : $"{t / 60}m {t % 60}s";
         if (t < 86400) return $"{t / 3600}h {t % 3600 / 60:00}m";
         return $"{t / 86400}d {t % 86400 / 3600:00}h";
     }

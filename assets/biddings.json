@@ -1,0 +1,346 @@
+[
+  {
+    "id": "_visitor",
+    "name": "The Lampless Prophet",
+    "personal": "Haddeth",
+    "greeting": [
+      "Knock. Knock. You did not answer the first time either. Nine hundred years, Sexton, and still you open the door late.",
+      "They called me Haddeth, before I gave my eyes away. I see you well enough. I see you holding the rope. I bring Biddings."
+    ],
+    "leaves": "The door stays shut. Good. I will knock again when you are worse. It will not be long."
+  },
+  {
+    "id": "counted_rope",
+    "title": "The Counted Rope",
+    "pages": [
+      "Twelve. I counted them in a dream. Twelve strokes, and a woman on the Wheel will wake and remember her daughter's name.",
+      "I will hold the rope's end while you ring. It will rest slower in my hand. Rope dislikes the blind.",
+      "Ring it twelve times. Do not ask me which woman. You would only go and look at her."
+    ],
+    "ask": "Toll the bell 12 times within 8 minutes. The rope rests half again as long.",
+    "objective": {
+      "type": "toll",
+      "target": null,
+      "amount": 12,
+      "seconds": 480
+    },
+    "burden": {
+      "target": "tollRegen",
+      "mult": 1.5
+    },
+    "boon": {
+      "target": "tollRegen",
+      "mult": 0.5,
+      "seconds": 1800
+    },
+    "curse": {
+      "target": "toll",
+      "mult": 0.75,
+      "seconds": 600
+    },
+    "accept": "Good. My hand is on the rope. Pull.",
+    "refuse": "Then she sleeps. She will not mind. Sleep is the only mercy left in Ashkirk.",
+    "success": "Twelve. Below, a woman says a name and screams for the first time in years. You did that. Well rung.",
+    "fail": "You stopped counting. So did she. The rope is sore with you."
+  },
+  {
+    "id": "keep_his_time",
+    "title": "Keep His Time",
+    "pages": [
+      "His heart stumbles. Did you notice? Every ninth beat, a small hole. A little death, trying to climb out.",
+      "Ring with it. On the beat, eight times. Close the holes before something learns to walk through them.",
+      "While you learn, your strokes weigh half. The bell does not trust a hand that misses."
+    ],
+    "ask": "Toll on the heartbeat 8 times within 8 minutes. Your Tolls weigh half meanwhile.",
+    "objective": {
+      "type": "beat",
+      "target": null,
+      "amount": 8,
+      "seconds": 480
+    },
+    "burden": {
+      "target": "toll",
+      "mult": 0.5
+    },
+    "boon": {
+      "target": "all",
+      "mult": 1.4,
+      "seconds": 2400
+    },
+    "curse": {
+      "target": "tollRegen",
+      "mult": 1.33,
+      "seconds": 600
+    },
+    "accept": "Listen with your chest, not your ears. Your ears have lied to you before.",
+    "refuse": "Then He keeps time alone. He was never good at it.",
+    "success": "There. For eight beats you were one animal. He felt it. He did not like it, but He felt it.",
+    "fail": "You missed. It slipped through. I will not tell you where it went."
+  },
+  {
+    "id": "salt_for_the_small",
+    "title": "Salt for the Small",
+    "pages": [
+      "The orphan-house on Tallow Row has thirty beds and no use for them. Children do not sleep when they cannot die. They only wait.",
+      "Give them the salt. Small knees are cheap to break and slow to mend. They will offer more than the old ones. They have more ahead.",
+      "Until they come, the old ones rise from the salt and stand. Their knees remember being knees."
+    ],
+    "ask": "Buy 20 Salt-Kneelers within 10 minutes. Your Kneelers yield half meanwhile.",
+    "objective": {
+      "type": "buy",
+      "target": "kneeler",
+      "amount": 20,
+      "seconds": 600
+    },
+    "burden": {
+      "target": "kneeler",
+      "mult": 0.5
+    },
+    "boon": {
+      "target": "kneeler",
+      "mult": 5,
+      "seconds": 2400
+    },
+    "curse": {
+      "target": "kneeler",
+      "mult": 0.75,
+      "seconds": 600
+    },
+    "accept": "I will tell them you chose them. Children like to be chosen.",
+    "refuse": "They will be grateful. For a while. Then someone else will choose them.",
+    "success": "Twenty small backs bent toward Him. One of them asked your name. I gave it.",
+    "fail": "The salt sat in its sacks. The children wait. They are very good at waiting now."
+  },
+  {
+    "id": "six_throats",
+    "title": "Six Throats",
+    "pages": [
+      "The choir has a hole in it the shape of six throats. Every hymn falls in. I hear it falling, all the way down.",
+      "Six new voices, Sexton, before the hole widens. Until it is filled, the choir sings at half and the cords fall at half."
+    ],
+    "ask": "Buy 6 Flagellant Choirs within 10 minutes. Your Choirs yield half meanwhile.",
+    "objective": {
+      "type": "buy",
+      "target": "choir",
+      "amount": 6,
+      "seconds": 600
+    },
+    "burden": {
+      "target": "choir",
+      "mult": 0.5
+    },
+    "boon": {
+      "target": "choir",
+      "mult": 3,
+      "seconds": 2400
+    },
+    "curse": {
+      "target": "choir",
+      "mult": 0.75,
+      "seconds": 600
+    },
+    "accept": "I will teach them the hymn. The cords they will learn alone.",
+    "refuse": "Then the hole keeps the hymn. It is a patient hole.",
+    "success": "Six throats, six cords, one hymn. The hole is closed. You can hear the stitches when they sing.",
+    "fail": "The hole has grown. It has a voice of its own now. It sounds like you."
+  },
+  {
+    "id": "render_the_abbess",
+    "title": "Render the Abbess",
+    "pages": [
+      "Abbess Venna was canonized at noon. By evening the chandlers were at her door. She is still alive in there. Everyone is.",
+      "The nave burns low. He sees by those candles, a little. Ten more saints, Sexton. Holiness renders well.",
+      "She asked for it. I want you to know that she asked. Until she is poured, the other saints gutter at half."
+    ],
+    "ask": "Buy 10 Tallow Saints within 10 minutes. Your Saints burn half as bright meanwhile.",
+    "objective": {
+      "type": "buy",
+      "target": "tallow",
+      "amount": 10,
+      "seconds": 600
+    },
+    "burden": {
+      "target": "tallow",
+      "mult": 0.5
+    },
+    "boon": {
+      "target": "tallow",
+      "mult": 4,
+      "seconds": 1800
+    },
+    "curse": {
+      "target": "tallow",
+      "mult": 0.75,
+      "seconds": 600
+    },
+    "accept": "I will hold her hands while she is poured. Mine are the only cold ones here.",
+    "refuse": "She will be glad. She will not know why. Holy people rarely do.",
+    "success": "Ten wicks. Ten vows. The nave is bright as noon. I feel it on my face. I wish I did not.",
+    "fail": "The chandlers waited, then went home. She is still a woman. For now."
+  },
+  {
+    "id": "folded_congregation",
+    "title": "The Folded Congregation",
+    "pages": [
+      "Under the north aisle lie the ones who came before. Not dead. Folded. Stacked. Mortared in, still breathing through the joints.",
+      "He wants a taller nave. The masons want material. You know where the material is.",
+      "It will cost you more than coin. Everything will, until it is done."
+    ],
+    "ask": "Buy 8 Charnel Masons within 15 minutes. Every Rite costs a quarter more meanwhile.",
+    "objective": {
+      "type": "buy",
+      "target": "mason",
+      "amount": 8,
+      "seconds": 900
+    },
+    "burden": {
+      "target": "costs",
+      "mult": 1.25
+    },
+    "boon": {
+      "target": "mason",
+      "mult": 4,
+      "seconds": 2700
+    },
+    "curse": {
+      "target": "mason",
+      "mult": 0.75,
+      "seconds": 600
+    },
+    "accept": "Bring a lamp for them. Not mine. Mine is for something else.",
+    "refuse": "They will go on holding up the floor, then. They have the practice.",
+    "success": "The nave rises. Lay your ear to the new wall and it hums. Do not lay your ear to the new wall.",
+    "fail": "The stacks stay stacked. The ones at the bottom asked if you had forgotten them. I said yes."
+  },
+  {
+    "id": "full_bowl",
+    "title": "The Full Bowl",
+    "pages": [
+      "A bowl. He wants a full bowl. Ten minutes of Ashkirk's hurt, gathered while I hold it. Not built. Not bought. Gathered.",
+      "While I hold it, the town suffers with one hand tied. Everything they offer weighs a quarter less. Fill it anyway."
+    ],
+    "ask": "Gather 10 minutes' worth of Dolor within 12 minutes. All Rites yield 3/4 meanwhile.",
+    "objective": {
+      "type": "gather",
+      "target": null,
+      "amount": 10,
+      "seconds": 720
+    },
+    "burden": {
+      "target": "all",
+      "mult": 0.75
+    },
+    "boon": {
+      "target": "all",
+      "mult": 1.5,
+      "seconds": 2400
+    },
+    "curse": {
+      "target": "all",
+      "mult": 0.75,
+      "seconds": 600
+    },
+    "accept": "Hold it level. It is heavier than it looks. It always is.",
+    "refuse": "Then I will carry it empty. I am used to carrying things that are not lit.",
+    "success": "Full to the lip. He drank, and the whole ribcage was warm. Do not mistake that for forgiveness.",
+    "fail": "Half a bowl. Half a bowl is what you leave for the dead, and no one here is allowed to be dead."
+  },
+  {
+    "id": "empty_hands",
+    "title": "Empty Hands",
+    "pages": [
+      "Your hands are always buying, Sexton. Stone, salt, wicks, men. I hear the coins in your sleep.",
+      "Buy nothing. Not one candle, not one knee. Send your Deacons to their cells. Fifteen minutes of empty hands.",
+      "After, pain sells cheap. Everything sells cheap after a famine."
+    ],
+    "ask": "Buy nothing at all for 15 minutes: no Rites, no Sacraments, no Deacon buys.",
+    "objective": {
+      "type": "abstain",
+      "target": null,
+      "amount": 0,
+      "seconds": 900
+    },
+    "burden": null,
+    "boon": {
+      "target": "costs",
+      "mult": 0.6,
+      "seconds": 1800
+    },
+    "curse": {
+      "target": "costs",
+      "mult": 1.2,
+      "seconds": 600
+    },
+    "accept": "Put your hands in your lap. Feel how they itch. That itch rang the bell, once.",
+    "refuse": "Then keep buying. Something in Ashkirk is always for sale. You taught it that.",
+    "success": "The fast is over. Go. Buy. They will sell themselves to you cheap, they are so tired.",
+    "fail": "You reached. I heard it. A hand makes a sound when it wants something."
+  },
+  {
+    "id": "hear_nothing",
+    "title": "Let Them Hear Nothing",
+    "pages": [
+      "There is a choir that sings only to the bell. When the bell stops, they do not know what to do with their mouths.",
+      "Leave the rope alone for twenty minutes. Let them find out. Silence is a cord too. It cuts slower."
+    ],
+    "ask": "Do not toll at all for 20 minutes. Your Choirs yield half meanwhile.",
+    "objective": {
+      "type": "silence",
+      "target": null,
+      "amount": 0,
+      "seconds": 1200
+    },
+    "burden": {
+      "target": "choir",
+      "mult": 0.5
+    },
+    "boon": {
+      "target": "toll",
+      "mult": 5,
+      "seconds": 1800
+    },
+    "curse": {
+      "target": "toll",
+      "mult": 0.75,
+      "seconds": 600
+    },
+    "accept": "Sit on your hands. They are the only part of you that ever wanted to help.",
+    "refuse": "You cannot bear the quiet. I know. Yours was the last loud sound this world made.",
+    "success": "When you ring now, it lands on them like rain on the parched. They will do anything for it.",
+    "fail": "You rang. They sobbed with relief. It will not taste the same for some time."
+  },
+  {
+    "id": "hour_under_the_lash",
+    "title": "An Hour Under the Lash",
+    "pages": [
+      "You lay the lash on everyone but yourself. The town has noticed. The town says nothing. It is a very polite town.",
+      "I stood under the bell the day you rang it. I was meant to light the knife its way. I did not. It found Him anyway.",
+      "One hour by your own hand, Sexton. Let them hear it through the floor. Until you go up, your rope rests slower."
+    ],
+    "ask": "Complete a Mortification of 1 hour or longer within 3 hours. The rope rests slower.",
+    "objective": {
+      "type": "mortify",
+      "target": null,
+      "amount": 1,
+      "seconds": 10800
+    },
+    "burden": {
+      "target": "tollRegen",
+      "mult": 1.5
+    },
+    "boon": {
+      "target": "all",
+      "mult": 1.6,
+      "seconds": 3600
+    },
+    "curse": {
+      "target": "all",
+      "mult": 0.8,
+      "seconds": 600
+    },
+    "accept": "I will count the strokes. I am good at counting things I cannot see.",
+    "refuse": "Of course. You have always preferred to arrange it.",
+    "success": "They heard every stroke. Tomorrow they will offer more, and think it was their own idea.",
+    "fail": "No sound from the tower. They have stopped wondering about you. That is worse."
+  }
+]

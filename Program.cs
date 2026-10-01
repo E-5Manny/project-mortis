@@ -10,7 +10,30 @@ static class App
     static Game G = new();
 
     // screen state
-    static int Tab, LedgerTab;
+    static int Tab, LedgerTab, ImmureSub;
+    static float RitesScroll, SacsScroll;
+    // the Omen: an eye that opens in the wall
+    static float OmenIn = float.TryParse(Environment.GetEnvironmentVariable("MORTIS_OMEN_IN"), out var oi) ? oi : 300, OmenAge = -1;  // env knob for testing
+    static Vector2 OmenPos;
+    static int OmenKindNow;
+    // visitors at the door
+    static float VisitIn = float.TryParse(Environment.GetEnvironmentVariable("MORTIS_VISIT_IN"), out var vi) ? vi : 900, VisitWait = -1, KnockIn;
+    static Bidding? AtDoor;
+    static Dialog? Talk;
+
+    // A visual-novel exchange: pages typed out one by one; the last may offer choices.
+    class Dialog
+    {
+        public string Speaker = "";
+        public List<string> Pages = new();
+        public int Page;
+        public float Typed, Age;
+        public string[] Choices = [];
+        public Action<int>? OnChoice;
+        public bool Done => Page >= Pages.Count - 1 && Typed >= Pages[^1].Length;
+    }
+
+    static readonly Vector2[] OmenSpots = [new(30, 104), new(200, 112), new(24, 250), new(206, 244), new(60, 412), new(170, 414), new(115, 330)];
     static bool SextonView;
     static int MortifyChoice = 1;
     static float HoldMortify, HoldAbandon;
@@ -83,6 +106,7 @@ static class App
     {
         CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
         CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+        Data.LoadBiddings();
         if (args.Contains("--selftest")) { Environment.Exit(SelfTest.Run()); return; }
         if (args.Contains("--dump-sounds"))  // Mortis.exe --dump-sounds [dir]: every generated sound as WAV
         {
@@ -111,6 +135,7 @@ static class App
         SetTraceLogLevel(TraceLogLevel.Warning);
         InitWindow(630, 520, "Mortis");
         SetExitKey(KeyboardKey.Null);  // Esc hides, it doesn't quit
+        Art.SetWindowIcon();
         Ui.Init();
         Fx.Init();
         Art.Init();
@@ -155,6 +180,7 @@ static class App
     {
         if (SaveFile.Load<Game>() is not { } g) return;
         G = g;
+        G.Migrate();
         double away = (DateTime.UtcNow - G.LastSeenUtc.ToUniversalTime()).TotalSeconds;
         var result = G.ApplyAway(away);
         if (away >= 60) ShowAway(result);
@@ -172,6 +198,7 @@ static class App
         if (hide && !Panic.Registered) { MinimizeWindow(); return; }  // no global key: minimize so the taskbar can restore
         Hidden = hide;
         Audio.Hide(hide);
+        if (hide) G.Stats.Hides++;
         if (hide) { SetWindowState(ConfigFlags.HiddenWindow); Save(); return; }
         ClearWindowState(ConfigFlags.HiddenWindow);
         if (IsWindowMinimized()) RestoreWindow();
@@ -192,7 +219,7 @@ static class App
 
     // ---------------------------------------------------------------- frame
 
-    static Color Accent => Lerp(AccentAsh, Crimson, (float)Math.Clamp(Math.Log10(G.Dolor.Run + 1) / 8, 0, 1));
+    static Color Accent => Lerp(AccentAsh, Crimson, (float)G.RunProgress());
 
     static void RunFrame(float dt)
     {
@@ -210,7 +237,29 @@ static class App
         FlashT += dt; ShakeT += dt; EmptyT += dt;
 
         if (G.NewWound is { } nw) { RevealWound = nw; G.NewWound = null; AddLog("A wound opens: " + Data.Wound(nw).Name); Audio.Play("wound", 0.9f); Save(); }
-        bool overlay = Away != null || RevealWound != null || SeqT >= 0;
+        while (G.NewAdmissions.TryDequeue(out var adm))
+        {
+            var a = Data.Admissions.First(x => x.Id == adm);
+            AddLog("Admitted: " + a.Name);
+            Override = a.Line;
+            OverrideT = 7;
+            Audio.Play("chime", 0.4f, 0.6f);
+        }
+        if (G.AutoImmureDue() && SeqT < 0 && Away == null && RevealWound == null && Talk == null) StartImmure();
+        bool overlay = Away != null || RevealWound != null || SeqT >= 0 || Talk != null;
+        UpdateOmen(dt, overlay);
+        UpdateVisit(dt, overlay);
+        G.TickBidding(dt);
+        if (G.BiddingOutcome is { } outcome && Data.Bid(outcome.id) is { } done)
+        {
+            G.BiddingOutcome = null;
+            AddLog(outcome.kept ? $"Bidding kept: {done.Title}" : $"Bidding failed: {done.Title}");
+            Override = outcome.kept ? done.Success : done.Fail;
+            OverrideT = 8;
+            Audio.Play(outcome.kept ? "chime" : "thunk", 0.7f, outcome.kept ? 0.75f : 1f);
+            Save();
+        }
+        if (overlay && IsKeyPressed(KeyboardKey.Escape)) SetHidden(true);
         if (!overlay) Keys();
 
         if (SextonView) Sexton.Render(dt, G.Mortifying(), (float)G.MortifyProgress(), G.Mortifications);
@@ -219,6 +268,7 @@ static class App
         ClearBackground(Bg0);
         Ui.BeginFrame();
         Ui.Blocked = overlay && FadeT < 0;
+        if (OmenAge >= 0 && !overlay && Vector2.Distance(GetMousePosition(), OmenPos) < 16 && IsMouseButtonPressed(MouseButton.Left)) { ClaimOmen(); Ui.Consume(); }
 
         var shake = !quiet && ShakeT < 0.12f ? new Vector2(Random.Shared.Next(-2, 3), Random.Shared.Next(-2, 3)) : Vector2.Zero;
         BeginMode2D(new Camera2D { Offset = shake, Zoom = 1 });
@@ -238,6 +288,7 @@ static class App
         TabBar();
         Header();
         Fx.Bleed(dt, 48, 16);
+        DrawOmen();
         Fx.Ash(dt, T, G.Dps(), quiet, dim);
         WhisperBar();
         EndMode2D();
@@ -246,6 +297,7 @@ static class App
         if (dim) DrawRectangle(0, 0, 630, 520, ColorAlpha(Color.Black, 0.30f));
         if (Away != null) AwayOverlay();
         else if (RevealWound != null) WoundOverlay();
+        else if (Talk != null) { Ui.Blocked = false; DialogOverlay(dt); }
         if (SeqT >= 0) ImmureSequence(dt);
         EndTextureMode();
 
@@ -285,7 +337,7 @@ static class App
             if (IsKeyPressed(nums[i]) && TabOpen(i)) Tab = i;
     }
 
-    static bool ImmureRevealed => G.Immurements > 0 || G.Dolor.Run >= 1e7;
+    static bool ImmureRevealed => G.Immurements > 0 || G.Dolor.Run >= Game.Gate / 10;
     static bool TabOpen(int i) => i switch { 2 => ImmureRevealed, 3 => G.Wounds.Count > 0, _ => true };
 
     // ---------------------------------------------------------------- heart + toll
@@ -305,7 +357,7 @@ static class App
         NextInterval = G.Ready() ? period * Irregular[BeatIdx++ % Irregular.Length] : period;
     }
 
-    static bool OnBeat() => SinceBeat <= 0.10 || NextInterval - SinceBeat <= 0.10;
+    static bool OnBeat() => SinceBeat <= G.BeatWindow() || NextInterval - SinceBeat <= G.BeatWindow();
 
     static void DoToll()
     {
@@ -364,7 +416,7 @@ static class App
         float glimpse = GlimpseT < 2.4f ? 0.55f * MathF.Sin(MathF.PI * GlimpseT / 2.4f) : 0;
         float face = Math.Max(ReadyGlow, glimpse);
         if (face > 0) Art.DrawCentered(Art.HeartFace, HeartC, sx, sy, ColorAlpha(Color.White, face));
-        int maggots = (int)Math.Clamp((Math.Log10(G.Dolor.Run + 1) - 3) * 1.4, 0, 8);  // the rot sets in as the run ages
+        int maggots = (int)Math.Clamp((G.RunProgress() - 0.3) * 12, 0, 8);  // the rot sets in as the run ages
         Fx.Writhe(dt, T, HeartC, maggots, 30 * sx);
         Fx.Flies(T, HeartC, 3 + (G.Ready() ? 4 : 0) + Math.Min(3, G.Immurements));
 
@@ -486,7 +538,7 @@ static class App
         DrawRectangle(0, 0, 630, 48, ColorAlpha(Bg1, 0.88f));
         DrawRectangle(0, 46, 630, 2, Blood);
         Title("Mortis", 13, 3, 24, Blood);
-        Title("Mortis", 12, 2, 24, Lerp(Scale(Bone, 0.8f), IchorBright, (float)Math.Clamp(Math.Log10(G.Dolor.Run + 1) / 8, 0, 1)));
+        Title("Mortis", 12, 2, 24, Lerp(Scale(Bone, 0.8f), IchorBright, (float)G.RunProgress()));
         Text($"He beats {G.Bpm():0} times a minute", 12, 30, 13, BoneDim);
         TitleCentered(Num(G.Dolor.Amount), 315, 0, 30, Bone);
         TextCentered(G.Mortifying() ? "the heart starves" : Rate(G.Dps()), 315, 32, 13, G.Mortifying() ? IchorBright : BoneDim);
@@ -559,8 +611,24 @@ static class App
             .Replace("{souls}", Num(G.Souls()));
         if (HoverText == null && Override == null && !G.Settings.Quiet && GlitchT < 0.08f && s[GlitchPos % s.Length] != ' ')
             s = s[..(GlitchPos % s.Length)] + GlitchChar + s[(GlitchPos % s.Length + 1)..];
-        Text(Fit(s, 13, 490), 12, 495, 13, Override == null && HoverText != null ? Bone : BoneDim);
+        if (VisitWait >= 0 && HoverText == null)
+        {
+            s = "Someone is knocking at the bell-tower door. Click here to answer.";
+            Text(s, 12, 495, 13, Lerp(Gold, GoldBright, 0.5f + 0.5f * MathF.Sin(T * 3)));
+            if (Pressed(new Rectangle(0, 484, 630, 36))) OpenVisit();
+            return;
+        }
+        float textW = G.Bidding != null ? 330 : 490;
+        Text(Fit(s, 13, textW), 12, 495, 13, Override == null && HoverText != null ? Bone : BoneDim);
 
+        if (G.Bidding != null && Data.Bid(G.Bidding.Id) is { } bid)
+        {
+            string line = $"{bid.Title}: {G.BiddingProgress() * 100:0}% · {Duration(G.Bidding.Left)} left";
+            TextRight(Fit(line, 13, 270), 618, 495, 13, Gold);
+            if (Hover(new Rectangle(350, 484, 280, 36)))
+                HoverText = bid.Ask + (bid.Burden is { } b ? $" Burden: {ModText(b)}." : "");
+            return;
+        }
         string saved = $"saved {Duration(SinceSave)} ago";
         TextRight(saved, 618, 495, 13, ColorAlpha(BoneDim, 0.7f));
         DrawCircle((int)(618 - Width(saved, 13) - 8), 502, 3, SinceSave < 1.5 ? GoldBright : Line);
@@ -570,17 +638,37 @@ static class App
 
     static double Payback(Rite r) => G.UnitRate(r) > 0 ? G.Cost(r, 1) / G.UnitRate(r) : double.PositiveInfinity;
 
+    // Scroll a list in the content area with the wheel; returns the offset and clips drawing and input to the area.
+    static readonly Rectangle ContentArea = new(230, 98, 400, 386);
+    static float BeginScroll(ref float scroll, float contentH)
+    {
+        float max = Math.Max(0, contentH - ContentArea.Height + 4);
+        if (CheckCollisionPointRec(GetMousePosition(), ContentArea) && !Ui.Blocked) scroll -= GetMouseWheelMove() * 40;
+        scroll = Math.Clamp(scroll, 0, max);
+        BeginScissorMode((int)ContentArea.X, (int)ContentArea.Y, (int)ContentArea.Width, (int)ContentArea.Height);
+        Ui.Clip = ContentArea;
+        if (max > 0)  // a thin scrollbar on the right edge
+        {
+            float h = ContentArea.Height * ContentArea.Height / (contentH + 4), y = ContentArea.Y + (ContentArea.Height - h) * scroll / max;
+            DrawRectangle(627, (int)y, 2, (int)h, ColorAlpha(BoneDim, 0.5f));
+        }
+        return scroll;
+    }
+    static void EndScroll() { EndScissorMode(); Ui.Clip = null; }
+
     static void RitesTab()
     {
         var visible = Data.Rites.Where(r => G.Revealed.Contains(r.Id)).ToList();
+        var next = Data.Rites.FirstOrDefault(r => !G.Revealed.Contains(r.Id));
         var best = visible.MinBy(Payback);
         double dps = G.Dps();
         float shimmer = 0.85f + 0.15f * MathF.Sin(2 * T);
+        float off = BeginScroll(ref RitesScroll, 64 * (visible.Count + (next != null ? 1 : 0)));
 
         for (int i = 0; i < visible.Count; i++)
         {
             var r = visible[i];
-            var rect = new Rectangle(234, 100 + 64 * i, 392, 62);
+            var rect = new Rectangle(234, 100 + 64 * i - off, 392, 62);
             int k = G.BuyCount(r);
             double cost = G.Cost(r, k);
             bool can = cost <= G.Dolor.Amount;
@@ -608,36 +696,39 @@ static class App
                 HoverText = $"{r.Name}: each gives {Rate(G.UnitRate(r))}. ×{k} costs {Num(cost, ceil: true)}. B cycles ×1/×10/Max.";
         }
 
-        if (Data.Rites.FirstOrDefault(r => !G.Revealed.Contains(r.Id)) is { } next)
+        if (next != null)
         {
-            var rect = new Rectangle(234, 100 + 64 * visible.Count, 392, 62);
+            var rect = new Rectangle(234, 100 + 64 * visible.Count - off, 392, 62);
             Frame(rect, Bg1);
             Art.DrawIcon(next.Id, 240, rect.Y + 7, new Color(0, 0, 0, 230));  // a shape under the shroud
             Title("???", 294, rect.Y + 2, 20, BoneDim);
             Text(Fit($"An unseen rite. Revealed at {Num(0.5 * next.BaseCost, ceil: true)} Dolor this run.", 13, 318), 294, rect.Y + 26, 13, BoneDim);
         }
+        EndScroll();
     }
 
     // ---------------------------------------------------------------- Sacraments
 
     static void SacramentsTab()
     {
-        var tiles = Data.Sacraments.Where(G.SacVisible).ToList();
+        var open = Data.Sacraments.Where(s => G.SacVisible(s) && !G.Has(s.Id)).OrderBy(s => s.Cost).ToList();
+        var taken = Data.Sacraments.Where(s => G.Has(s.Id)).ToList();
         var locked = Data.Sacraments.FirstOrDefault(s => !G.SacVisible(s));
+        var tiles = open.Cast<Sacrament?>().Append(locked).Concat(taken).Where(s => s != null).ToList();
         float shimmer = 0.85f + 0.15f * MathF.Sin(2 * T);
+        float off = BeginScroll(ref SacsScroll, 63 * ((tiles.Count + 1) / 2));
 
-        for (int i = 0; i <= tiles.Count; i++)
+        for (int i = 0; i < tiles.Count; i++)
         {
-            var rect = new Rectangle(i % 2 == 0 ? 234 : 432, 100 + 63 * (i / 2), 196, 60);
-            if (i == tiles.Count)
+            var s = tiles[i]!;
+            var rect = new Rectangle(i % 2 == 0 ? 234 : 432, 100 + 63 * (i / 2) - off, 196, 60);
+            if (s == locked)
             {
-                if (locked == null) break;
                 Frame(rect, Bg1);
                 Title("???", rect.X + 8, rect.Y + 2, 18, BoneDim);
                 Text(Fit(locked.Hint, 13, 180), rect.X + 8, rect.Y + 26, 13, BoneDim);
-                break;
+                continue;
             }
-            var s = tiles[i];
             if (G.Has(s.Id))
             {
                 Frame(rect, Bg0);
@@ -655,14 +746,28 @@ static class App
             Text(Num(s.Cost, ceil: true) + " Dolor", rect.X + 8, rect.Y + 42, 13, can ? Scale(Bone, shimmer) : CantAfford);
             if (Hover(rect)) HoverText = $"{s.Name}: {s.Effect}";
         }
+        EndScroll();
     }
 
     // ---------------------------------------------------------------- Immure
 
     static void ImmureTab()
     {
+        string[] subs = ["Immurement", "The Lattice", "Vows"];
+        for (int i = 0; i < subs.Length; i++)
+            if (TextButton(new Rectangle(234 + i * 132, 100, 130, 20), subs[i], 13, true, ImmureSub == i)) ImmureSub = i;
+        switch (ImmureSub)
+        {
+            case 0: ImmureView(); break;
+            case 1: LatticeView(); break;
+            case 2: VowsView(); break;
+        }
+    }
+
+    static void ImmureView()
+    {
         int m = G.MarrowEarned, p = G.Pending();
-        Title("Immurement", 250, 102, 30, Bone);
+        Title("Immurement", 250, 124, 26, Bone);
         string[] lines =
         [
             $"Marrow walled so far: {m} ({Mult(G.MarrowMult(m))})",
@@ -670,14 +775,14 @@ static class App
             $"Next Marrow at {Num(G.NextMarrowAt(), ceil: true)} lifetime Dolor",
             $"This run: {Num(G.Dolor.Run)} / {Num(Game.Gate)} Dolor",
         ];
-        for (int i = 0; i < lines.Length; i++) Text(lines[i], 250, 142 + 18 * i, 13, i == 1 && G.Ready() ? BoneWhite : Bone);
+        for (int i = 0; i < lines.Length; i++) Text(lines[i], 250, 158 + 18 * i, 13, i == 1 && G.Ready() ? BoneWhite : Bone);
 
         bool vigil = G.Has("S8");
         Text("Lost to the rot:", 250, 236, 13, Crimson);
         string[] lost = ["Dolor", "Every Rite", vigil ? "Every Sacrament but the Vigil" : "Every Sacrament", "Toll charges"];
         for (int i = 0; i < lost.Length; i++) Text(lost[i], 258, 256 + 16 * i, 13, BoneDim);
         Text("Carried in the bone:", 440, 236, 13, Gold);
-        var kept = new List<string> { "Marrow", "Lifetime Dolor", "The Sexton's Account" };
+        var kept = new List<string> { "Marrow and the Lattice", "Lifetime Dolor", "Wounds", "The Sexton's Account" };
         if (vigil) kept.Add("Vigil Unbroken");
         for (int i = 0; i < kept.Count; i++) Text(kept[i], 448, 256 + 16 * i, 13, BoneDim);
 
@@ -686,6 +791,65 @@ static class App
             StartImmure();
         if (can && !G.Ready() && m > 0) TextCentered("You could go now. The bone would be thin.", 430, 452, 13, BoneDim);
         else TextCentered("The mortar is already wet. It always is.", 430, 452, 13, BoneDim);
+    }
+
+    // The Lattice: a root and three branches of five, bought with unspent Marrow.
+    static Vector2 NodePos(Node n) => n.Branch < 0 ? new Vector2(430, 168) : new Vector2(296 + n.Branch * 134, 168 + n.Tier * 58);
+
+    static void LatticeView()
+    {
+        TextRight($"Marrow to spend: {G.MarrowFree()} of {G.MarrowEarned}", 618, 126, 13, Gold);
+        Text("Spending it never weakens it.", 242, 126, 13, BoneDim);
+        foreach (var n in Data.Lattice)
+            if (n.Requires != null)
+                DrawLineEx(NodePos(Data.Node(n.Requires)), NodePos(n), 2, G.Knows(n.Id) ? Crimson : ColorAlpha(Line, 0.9f));
+        for (int b = 0; b < 3; b++) TextCentered(Data.Branches[b], 296 + b * 134, 194, 13, ColorAlpha(BoneDim, 0.8f));
+        foreach (var n in Data.Lattice)
+        {
+            var c = NodePos(n);
+            bool known = G.Knows(n.Id), can = G.CanLearn(n), reachable = n.Requires == null || G.Knows(n.Requires);
+            bool hover = !Ui.Blocked && Vector2.Distance(GetMousePosition(), c) < 15;
+            DrawCircleV(c, 14, known ? Ichor : Bg0);
+            DrawCircleLinesV(c, 14, known ? Gold : can ? Lerp(BoneDim, Bone, 0.5f + 0.5f * MathF.Sin(T * 4)) : reachable ? BoneDim : Line);
+            if (known) Cross(c.X, c.Y + 1, 12, Gold);
+            else TextCentered(n.Cost.ToString(), c.X, c.Y - 6, 13, can ? Bone : reachable ? BoneDim : ColorAlpha(BoneDim, 0.5f));
+            if (n.Branch >= 0) TextCentered(Fit(n.Name, 13, 128), c.X, c.Y + 16, 13, known ? Bone : ColorAlpha(BoneDim, reachable ? 1 : 0.6f));
+            if (!hover) continue;
+            HoverText = known ? $"{n.Name}: {n.Effect}. Learned."
+                : $"{n.Name} ({n.Cost} Marrow): {n.Effect}." + (reachable ? "" : " Learn what comes before it first.");
+            if (can && !Ui.Clicked && IsMouseButtonPressed(MouseButton.Left))
+            {
+                Ui.Consume();
+                G.Learn(n);
+                AddLog("Learned: " + n.Name);
+                Audio.Play("chime", 0.7f, 0.8f);
+            }
+        }
+    }
+
+    static void VowsView()
+    {
+        Text($"Deacons swear by the Marrow you have earned ({G.MarrowEarned}).", 242, 126, 13, BoneDim);
+        for (int i = 0; i < Data.Vows.Length; i++)
+        {
+            var v = Data.Vows[i];
+            var r = new Rectangle(234, 146 + 47 * i, 392, 44);
+            bool sworn = G.Sworn(v.Id), on = G.Deacon(v.Id);
+            Frame(r, sworn ? Bg2 : Bg1);
+            Title(v.Name, 242, r.Y + 2, 16, sworn ? Bone : BoneDim);
+            Text(v.Effect, 242, r.Y + 24, 13, sworn ? BoneDim : ColorAlpha(BoneDim, 0.6f));
+            if (!sworn) { TextRight($"at {v.Marrow} Marrow", 614, r.Y + 6, 13, ColorAlpha(BoneDim, 0.7f)); continue; }
+            if (TextButton(new Rectangle(546, r.Y + 4, 70, 18), on ? "On" : "Off", 13, true, on))
+                if (!G.DeaconsOff.Remove(v.Id)) G.DeaconsOff.Add(v.Id);
+            if (v.Id == "deacon_wall")
+            {
+                double[] steps = [0.5, 1, 2, 4];
+                if (TextButton(new Rectangle(452, r.Y + 4, 88, 18), $"at ×{G.AutoImmureAt:0.#}", 13))
+                    G.AutoImmureAt = steps[(Array.IndexOf(steps, G.AutoImmureAt) + 1) % steps.Length];
+                if (Hover(new Rectangle(452, r.Y + 4, 88, 18)))
+                    HoverText = $"Walls you in once the Marrow waiting is {G.AutoImmureAt:0.#}× what you already have.";
+            }
+        }
     }
 
     static void StartImmure()
@@ -765,15 +929,16 @@ static class App
 
     static void LedgerTabView()
     {
-        string[] subs = ["Account", "Tally", "Settings"];
-        for (int i = 0; i < 3; i++)
-            if (TextButton(new Rectangle(234 + i * 132, 100, 130, 20), subs[i], 13, true, LedgerTab == i)) LedgerTab = i;
+        string[] subs = ["Account", "Admissions", "Tally", "Settings"];
+        for (int i = 0; i < subs.Length; i++)
+            if (TextButton(new Rectangle(234 + i * 98, 100, 96, 20), subs[i], 13, true, LedgerTab == i)) LedgerTab = i;
 
         switch (LedgerTab)
         {
             case 0: AccountView(); break;
-            case 1: TallyView(); break;
-            case 2: SettingsView(); break;
+            case 1: AdmissionsView(); break;
+            case 2: TallyView(); break;
+            case 3: SettingsView(); break;
         }
     }
 
@@ -796,6 +961,188 @@ static class App
         for (int i = 0; i < lines.Count; i++)
             Text(lines[i].text, lines[i].head ? 242 : 256, 128 + i * 15 - AccountScroll, 13, lines[i].head ? Gold : Bone, lines[i].head ? Face.Title : Face.Body);
         EndScissorMode();
+    }
+
+    static void AdmissionsView()
+    {
+        int n = G.Admitted.Count;
+        Text($"{n} of {Data.Admissions.Length} admitted · All {Mult(G.AdmissionMult())}", 242, 128, 13, Gold);
+        string? last = null;
+        for (int i = 0; i < Data.Admissions.Length; i++)
+        {
+            var a = Data.Admissions[i];
+            var r = new Rectangle(238 + i % 9 * 43, 148 + i / 9 * 43, 40, 40);
+            bool got = G.Admitted.Contains(a.Id);
+            Frame(r, got ? Ichor : Bg0);
+            if (got) { Cross(r.X + 20, r.Y + 21, 16, Gold); last = a.Id; }
+            else TextCentered("?", r.X + 20, r.Y + 12, 13, ColorAlpha(BoneDim, 0.4f));
+            if (Hover(r)) HoverText = got ? $"{a.Name}: \"{a.Line}\"" : $"{a.Name}: not yet admitted.";
+        }
+        if (last == null) { Text("Nothing admitted yet. There will be time.", 242, 384, 13, BoneDim); return; }
+        var l = Data.Admissions.First(x => x.Id == G.Admitted.Last());
+        Title(l.Name, 242, 372, 18, Bone);
+        var lines = Wrap($"\"{l.Line}\"", 13, 370);
+        for (int i = 0; i < lines.Count; i++) Text(lines[i], 242, 396 + i * 16, 13, BoneDim);
+    }
+
+    // ---------------------------------------------------------------- visitors and Biddings
+
+    static string TargetName(string t) => t switch
+    {
+        "all" => "All production", "toll" => "Tolls", "costs" => "Rite prices", "tollRegen" => "Toll rest time",
+        _ => Data.Rites.FirstOrDefault(r => r.Id == t)?.Name + "s",
+    };
+    static string ModText(Mod m) => $"{TargetName(m.Target)} ×{m.Mult:0.##}" + (m.Seconds > 0 ? $" for {Duration(m.Seconds)}" : "");
+
+    static void UpdateVisit(float dt, bool overlay)
+    {
+        if (VisitWait >= 0)
+        {
+            VisitWait += dt;
+            KnockIn -= dt;
+            if (KnockIn <= 0 && !overlay) { Audio.Play("knock", 0.45f); KnockIn = 90; }
+            if (VisitWait < 600) return;
+            VisitWait = -1;  // he gives up waiting
+            AddLog("The knocking stopped.");
+            if (Data.Prophet != null) { Override = Data.Prophet.Leaves; OverrideT = 7; }
+            return;
+        }
+        if (!G.Settings.Visitors || overlay || !G.CanBeVisited()) return;
+        VisitIn -= dt;
+        if (VisitIn > 0) return;
+        VisitIn = 900 + Random.Shared.Next(900);
+        VisitWait = 0;
+        KnockIn = 0;
+        AtDoor = G.NextBidding();
+    }
+
+    static void OpenVisit()
+    {
+        if (AtDoor is not { } bid || Data.Prophet is not { } who) return;
+        VisitWait = -1;
+        var pages = new List<string>();
+        if (!G.MetProphet) pages.AddRange(who.Greeting);
+        pages.AddRange(bid.Pages);
+        pages.Add(bid.Ask);
+        pages.Add($"While you bear it: {(bid.Burden is { } b ? ModText(b) : "nothing")}. If you keep it: {ModText(bid.Boon)}."
+                  + (bid.Curse is { } c ? $" If you fail: {ModText(c)}." : "") + $" You have {Duration(bid.Objective.Seconds)}.");
+        G.MetProphet = true;
+        Talk = new Dialog
+        {
+            Speaker = who.Name, Pages = pages, Choices = ["Accept", "Refuse"],
+            OnChoice = i =>
+            {
+                if (i == 0) { G.Accept(bid); AddLog("Bidding accepted: " + bid.Title); Audio.Play("chime", 0.6f, 0.7f); }
+                else { G.Refuse(bid); AddLog("The Prophet was turned away."); Audio.Play("thunk", 0.5f); }
+                Talk = new Dialog { Speaker = who.Name, Pages = [i == 0 ? bid.Accept : bid.Refuse], Age = 1 };
+                Save();
+            },
+        };
+    }
+
+    static void DialogOverlay(float dt)
+    {
+        var d = Talk!;
+        d.Age += dt;
+        string page = d.Pages[d.Page];
+        int before = (int)d.Typed;
+        d.Typed = Math.Min(page.Length, d.Typed + dt * 45);
+        for (int i = before; i < (int)d.Typed; i++)
+            if (i % 3 == 0 && char.IsLetter(page[i])) Audio.Play("murmur", 0.2f, 0.8f + 0.15f * Random.Shared.NextSingle());
+        bool typing = d.Typed < page.Length;
+
+        DrawRectangle(0, 0, 630, 520, ColorAlpha(Bg0, 0.8f));
+        float slide = 1 - MathF.Pow(1 - Math.Min(1, d.Age / 0.35f), 3);
+        int bob = MathF.Sin(T * 1.4f) > 0 ? 3 : 0;  // breathing, in whole art pixels
+        bool mouth = typing && (int)(d.Typed / 2) % 2 == 0 && char.IsLetter(page[Math.Min(page.Length - 1, (int)d.Typed)]);
+        Prophet.Draw(new Vector2(-200 + 230 * slide, 72 + bob), 3, mouth, ColorAlpha(Color.White, slide));
+
+        var box = new Rectangle(16, 340, 598, 164);
+        Frame(new Rectangle(28, 310, 260, 30), Bg1);
+        Title(d.Speaker, 40, 311, 24, Gold);
+        Frame(box, Bg1);
+        DrawRectangleLinesEx(box, 1, ColorAlpha(Crimson, 0.5f));
+        var lines = Wrap(page, 16, 566);
+        int left = (int)d.Typed;
+        for (int i = 0; i < lines.Count && left > 0; i++)
+        {
+            Text(lines[i][..Math.Min(lines[i].Length, left)], 32, 354 + i * 24, 16, Bone);
+            left -= lines[i].Length + 1;
+        }
+
+        bool advance = AnyKey && !IsKeyPressed(KeyboardKey.One) && !IsKeyPressed(KeyboardKey.Two) && !IsKeyPressed(KeyboardKey.A) && !IsKeyPressed(KeyboardKey.R)
+                       || IsMouseButtonPressed(MouseButton.Left) && !Hover(new Rectangle(330, 466, 270, 28));
+        if (d.Done && d.Choices.Length > 0)
+        {
+            int pick = -1;
+            for (int i = 0; i < d.Choices.Length; i++)
+                if (TextButton(new Rectangle(330 + i * 140, 466, 130, 28), d.Choices[i], 16)) pick = i;
+            if (IsKeyPressed(KeyboardKey.One) || IsKeyPressed(KeyboardKey.A)) pick = 0;
+            if (IsKeyPressed(KeyboardKey.Two) || IsKeyPressed(KeyboardKey.R)) pick = 1;
+            if (pick >= 0) d.OnChoice?.Invoke(pick);
+            return;
+        }
+        if (!typing) TextRight(d.Page < d.Pages.Count - 1 ? "click to continue" : "click to close", 600, 480, 13, ColorAlpha(BoneDim, 0.6f + 0.4f * MathF.Sin(T * 3)));
+        if (!advance || d.Age < 0.3f) return;
+        if (typing) d.Typed = page.Length;
+        else if (d.Page < d.Pages.Count - 1) { d.Page++; d.Typed = 0; }
+        else Talk = null;
+    }
+
+    // ---------------------------------------------------------------- the Omen
+
+    static void UpdateOmen(float dt, bool overlay)
+    {
+        if (OmenAge >= 0)
+        {
+            OmenAge += dt;
+            if (OmenAge > 60) OmenAge = -1;  // it closes, unanswered
+            return;
+        }
+        if (!G.Settings.Omens || overlay || G.Mortifying()) return;
+        OmenIn -= dt;
+        if (OmenIn > 0) return;
+        OmenIn = 300 + Random.Shared.Next(600);
+        OmenAge = 0;
+        OmenPos = OmenSpots[Random.Shared.Next(OmenSpots.Length)];
+        OmenKindNow = G.OmenKind();
+        Audio.Play("heart", 0.35f, 0.6f);
+    }
+
+    static void ClaimOmen()
+    {
+        double value = G.OmenValue(OmenKindNow);
+        G.ClaimOmen(OmenKindNow);
+        string what = OmenKindNow switch { 0 => "The heart surges: ×3 for a minute", 1 => $"A tithe of blood: +{Num(value)}", _ => "The rope is made whole" };
+        AddLog(what);
+        Fx.Float(OmenKindNow == 1 ? "+" + Num(value) : OmenKindNow == 0 ? "×3" : "rope", OmenPos.X, OmenPos.Y - 10, GoldBright);
+        Audio.Play("chime", 0.8f, 0.7f);
+        OmenAge = -1;
+    }
+
+    // A bloodshot eye opening in the stone: it opens, watches the cursor, blinks, weeps, and closes.
+    static void DrawOmen()
+    {
+        if (OmenAge < 0) return;
+        float open = Math.Min(1, OmenAge / 0.6f) * Math.Min(1, (60 - OmenAge) / 0.8f);
+        float blink = (OmenAge % 4.3f) < 0.15f ? 0.1f : 1;
+        float h = 7 * open * blink;
+        var c = OmenPos;
+        DrawEllipse((int)c.X, (int)c.Y, 17, 9, ColorAlpha(Color.Black, 0.6f));                       // the socket in the wall
+        if (h > 0.5f)
+        {
+            DrawEllipse((int)c.X, (int)c.Y, 14, h, new Color(196, 178, 140, 255));                   // yellowed white
+            for (int k = 0; k < 4; k++) DrawLineV(c + new Vector2(-13 + k * 2, -1 + k), c + new Vector2(-6, k - 1), ColorAlpha(IchorBright, 0.7f));
+            var look = Vector2.Normalize(GetMousePosition() - c + new Vector2(0.01f, 0)) * 4;
+            DrawCircleV(c + look, Math.Min(6, h), Ichor);                                             // iris
+            DrawCircleV(c + look, Math.Min(2.6f, h * 0.5f), Color.Black);                             // pupil
+        }
+        DrawEllipseLines((int)c.X, (int)c.Y, 15, Math.Max(1, h + 1), new Color(30, 8, 8, 255));       // lids
+        float tear = OmenAge * 7 % 30;                                                                // a tear of blood, again and again
+        DrawRectangle((int)c.X + 6, (int)(c.Y + 6), 2, (int)tear, ColorAlpha(Blood, 0.9f));
+        DrawCircleV(new Vector2(c.X + 7, c.Y + 6 + tear), 1.8f, Blood);
+        if (!Ui.Blocked && Vector2.Distance(GetMousePosition(), c) < 16)
+            HoverText = "An eye has opened in the wall. Look back at it.";
     }
 
     static void TallyView()
@@ -827,6 +1174,8 @@ static class App
             $"This run: {Duration(st.RunTimeSec)}   ·   All time: {Duration(st.PlayTimeSec)}",
         ];
         foreach (var s in stats) { Text(s, 242, y, 13, BoneDim); y += 18; }
+        foreach (var e in G.Effects)
+            if (y < 470) { Text($"{(e.Mult >= 1 ? "Boon" : "Curse")}: {ModText(new Mod(e.Target, e.Mult))}, {Duration(e.Left)} left", 242, y, 13, e.Mult >= 1 ? Gold : CantAfford); y += 18; }
     }
 
     static void SettingsView()
@@ -848,6 +1197,8 @@ static class App
         if (Row("Volume", $"{set.Volume * 100:0}%", false)) set.Volume = set.Volume >= 1 ? 0.25f : set.Volume + 0.25f;
         set.Screams = Toggle("Screams", set.Screams);
         set.SilentUnfocused = Toggle("Silent when the window isn't focused", set.SilentUnfocused);
+        set.Omens = Toggle("Omens (an eye opens in the wall now and then)", set.Omens);
+        set.Visitors = Toggle("Visitors knocking at the door", set.Visitors);
         var names = Audio.Names.ToArray();
         if (Row($"Test sounds: {names[SoundTest % names.Length]}", "Play", false)) { Audio.Audition(names[SoundTest % names.Length]); SoundTest++; }
         y += 6;
@@ -875,12 +1226,12 @@ static class App
     static void WoundsTab()
     {
         var owned = Data.Wounds.Where(w => G.Wounds.ContainsKey(w.Id)).ToList();
-        Text($"Open: {G.OpenWounds.Count} of {Game.OpenSlots}. Click a wound to open or close it.", 242, 103, 13, BoneDim);
+        Text($"Open: {G.OpenWounds.Count} of {G.OpenSlots()}. Click a wound to open or close it.", 242, 103, 13, BoneDim);
         for (int i = 0; i < owned.Count; i++)
         {
             var w = owned[i];
             int rank = G.Wounds[w.Id];
-            bool open = G.OpenWounds.Contains(w.Id), canOpen = open || G.OpenWounds.Count < Game.OpenSlots;
+            bool open = G.OpenWounds.Contains(w.Id), canOpen = open || G.OpenWounds.Count < G.OpenSlots();
             var r = new Rectangle(234, 120 + 33 * i, 392, 32);
             if (Button(r, canOpen, open ? BgHover : null)) G.ToggleWound(w.Id);
             if (open) { DrawRectangleLinesEx(r, 1, ColorAlpha(Crimson, 0.8f)); Cross(r.X + r.Width - 12, r.Y + 16, 10, Gold); }
@@ -889,7 +1240,7 @@ static class App
             string good = w.Good(rank);
             Text(good, 242, r.Y + 17, 13, open ? Bone : BoneDim);
             if (w.Bad != null) Text("but " + w.Bad, 242 + Width(good + "   ", 13), r.Y + 17, 13, CantAfford);
-            if (Hover(r)) HoverText = open ? $"{w.Name} is open. It bleeds into Him." : canOpen ? $"{w.Name} has healed over. Click to open it again." : "Three are already open. Close one first.";
+            if (Hover(r)) HoverText = open ? $"{w.Name} is open. It bleeds into Him." : canOpen ? $"{w.Name} has healed over. Click to open it again." : "Every slot is open. Close one first.";
         }
         if (owned.Count == 0) TextCentered("No wounds yet. Take up the scourge at the Sexton's side.", 430, 200, 13, BoneDim);
     }
@@ -907,7 +1258,7 @@ static class App
         TextCentered($"{Data.Depths[w.Depth]} · rank {Roman(rank)}", 315, 238, 13, DepthColor(w.Depth));
         TextCentered(w.Good(rank), 315, 262, 16, Bone);
         if (w.Bad != null) TextCentered("but " + w.Bad, 315, 284, 16, CantAfford);
-        TextCentered(G.OpenWounds.Contains(w.Id) ? "It is open. It bleeds into Him." : "Three are open already. Choose in the Wounds tab.", 315, 314, 13, BoneDim);
+        TextCentered(G.OpenWounds.Contains(w.Id) ? "It is open. It bleeds into Him." : "Every slot is open. Choose in the Wounds tab.", 315, 314, 13, BoneDim);
         TextCentered("Click or press any key", 315, 344, 13, ColorAlpha(BoneDim, 0.7f));
         if (AnyKey || IsMouseButtonPressed(MouseButton.Left)) RevealWound = null;
     }

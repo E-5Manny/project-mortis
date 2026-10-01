@@ -22,7 +22,7 @@ static class Audio
         ("lash", Lash, 2), ("grunt_1", () => Grunt(1), 1), ("grunt_2", () => Grunt(2), 1), ("hiss", Hiss, 1),
         ("scream_far_1", () => Scream(1, true), 1), ("scream_far_2", () => Scream(2, true), 1),
         ("scream_far_3", () => Scream(3, true), 1), ("scream_crowd", Crowd, 1), ("scream_near", () => Scream(1, false), 1),
-        ("brick", Brick, 3), ("wound", WoundSwell, 1),
+        ("brick", Brick, 3), ("wound", WoundSwell, 1), ("knock", Knock, 1), ("murmur", Murmur, 3),
     ];
     static readonly (string name, Func<float[]> gen)[] Beds = [("drone", Drone), ("candles", Candles)];
 
@@ -515,6 +515,33 @@ static class Audio
         }
         Add(o, Heart(), 2.2, 0.9);
         return Normalize(Reverb(o, 0.4, 0.86, 2.0), 0.8);
+    }
+
+    // Two knocks on the bell-tower door: wood, then the hollow behind it.
+    static float[] Knock()
+    {
+        var r = new Random(70);
+        var o = Buf(0.7);
+        foreach (var at in new[] { 0.0, 0.29 })
+        {
+            var k = Buf(0.25);
+            for (int i = 0; i < k.Length; i++)
+                k[i] = (float)(Noise(r) * Math.Exp(-T(i) * 60) + 0.8 * Math.Sin(2 * Math.PI * 90 * T(i)) * Math.Exp(-T(i) * 35));
+            Add(o, Bandpass(k, 350, 1.2), at, 2);
+        }
+        return Normalize(Reverb(Lowpass(o, 1500), 0.3, 0.84, 1.0), 0.7);
+    }
+
+    // One syllable of an old man's murmur, for dialog text as it types: breath through a slack mouth.
+    static float[] Murmur()
+    {
+        var r = new Random(71);
+        var o = Buf(0.09);
+        var voice = Voice(0.09, _ => 92, 0.6, r);
+        for (int i = 0; i < o.Length; i++) o[i] = voice[i];
+        var f = Formants(o, [(520, 4, 1), (1100, 6, 0.5)]);
+        Envelope(f, t => Math.Sin(Math.PI * t / 0.09));
+        return Normalize(Reverb(Lowpass(f, 2000), 0.2, 0.75, 0.3), 0.5);
     }
 
     // ---------------------------------------------------------------- beds (looping)

@@ -8,6 +8,10 @@
     <Nullable>enable</Nullable>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- the installer reads its version from the exe -->
+    <Version>0.5.0</Version>
+    <!-- regenerate with the dump-art flag; the window icon is set at runtime from the same pixels (Art.AppIcon) -->
+    <ApplicationIcon>assets\icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
