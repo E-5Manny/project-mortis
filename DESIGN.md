@@ -44,8 +44,8 @@ You are **the Sexton of the Last Bell**. You rang the bell that called the knife
 | Vows | Milestone rewards unlocked by total Marrow earned (v0.2). |
 | The Lattice | The tree you spend Marrow on (v0.3). |
 | Admissions | Achievements. Each one is a line of guilt worth +1% (v0.4). |
-| Pilgrimages | Timed expeditions (v0.5). |
-| Grave-Goods | Items with trade-offs brought back from Pilgrimages. |
+| Mortification | The Sexton leaves the bell to scourge himself for 15m, 1h, 4h or 8h. No Dolor is made until it ends. Unlocks after the first Immurement. |
+| Wounds | What Mortification gives. They come in three depths (Shallow, Deep, Grievous) and five ranks, and deeper ones carry a trade-off. Three can be open at once, and they persist through Immurement. |
 | Ordeals | Challenge runs (v0.6). |
 | The Unnaming / Ashen Names | Prestige layer 2 and its currency (v0.7). |
 | Ichor | Second resource: the god's own blood, spent on the Anatomy map (v0.8). |
@@ -55,8 +55,8 @@ You are **the Sexton of the Last Bell**. You rang the bell that called the knife
 
 - None of these may appear anywhere: Penitent One, Tears (of Atonement), Cvstodia, Miracle, Guilt Fragment, Mea Culpa, Shells, Glimpses, Tar, Fallgrim, Foundling.
 - Words we deliberately avoid as system names:
-  - Penance / Penitence (the currency is **Dolor**, challenges are **Ordeals**).
-  - Relic / Reliquary (we use **Grave-Goods**).
+  - Penance / Penitence (the currency is **Dolor**, the self-punishment mode is **Mortification**, challenges are **Ordeals**).
+  - Relic / Reliquary (we use **Wounds**).
   - Martyrdom (we use **Immurement**).
   - Ossuary (we use **Charnel**).
   - Confession (we use **Admissions**).
@@ -78,6 +78,11 @@ You are **the Sexton of the Last Bell**. You rang the bell that called the knife
   - The textures are the wall, the heart, the heart with its face, and one 24x24 icon per Rite.
   - `Mortis.exe --dump-art [dir]` exports them as PNG templates.
   - A PNG with the same name in `assets/sprites/` replaces the generated texture, which is the path to real pixel art.
+- **Sound:**
+  - Everything is synthesized in `Audio.cs` at startup, on a background thread, at 44.1 kHz mono. The building blocks are filters, a Freeverb-style cathedral reverb, bell partials and formant voices.
+  - There are two looping beds (the cathedral drone, and candles that scale with Tallow Saints) and event sounds for the heartbeat, drips, the bell, the lash, groans, screams, bricks and wounds.
+  - `--dump-sounds [dir]` exports the WAVs. A file with the same name in `assets/sounds/` (.wav, .ogg or .mp3) replaces any of them.
+  - The panic key silences the game instantly and M mutes. Settings has volume, screams, silent-when-unfocused and a sound tester.
 - **Fonts:** UnifrakturMaguntia (blackletter, used for titles and names) and IM Fell DW Pica (body text). Both are bundled in `assets/fonts` under the SIL Open Font License, and their licence files sit next to them.
 - **Self-test:** `Mortis.exe --selftest | more` runs formula and save asserts plus a greedy-player sim, which should reach the first Immurement in about 50 min. The exit code is the number of failures.
 - **Data:** Rites and Sacraments are plain rows. A Sacrament has a `Target` (a rite id, `all` or `toll`) and a `Mult` function, and `Game.MultFor(target)` multiplies all the bought ones together. S5 and S8 are checked by id.
@@ -108,7 +113,7 @@ You are **the Sexton of the Last Bell**. You rang the bell that called the knife
 3. **v0.3 The Lattice.** Spend Marrow on a tree of about 15 nodes. The passive bonus keeps counting Marrow *earned*, not Marrow held, so spending never costs anything.
 4. **v0.4 Admissions.** About 40 achievements. Each is one line of the Sexton's guilt and gives +1% to all production as a single modifier source.
    - This milestone also adds **Omens**: an optional altar sign that lasts 120 s. It never spawns while hidden, can be switched off, and grants either ×3 for 60 s or 15 minutes of production.
-5. **v0.5 Pilgrimages.** Send Kneelers on 15-minute, 1-hour or 8-hour journeys. They come back with hours of Dolor and a chance of **Grave-Goods**. There are 3 slots, and each Grave-Good has one trade-off.
+5. **v0.5 Mortification** (shipped early, on 2026-10-01). Unlocked by the first Immurement, it trades production time for Wounds: 11 wounds across 3 depths, ranks I to V, 3 open slots. The Sexton view shows the animated 16-bit sprite.
 6. **v0.6 Ordeals.** Six challenge runs that each impose a harsh rule: no Tolling, costs ×2, or only three Rites. Each one you complete grants a unique permanent modifier.
 7. **v0.7 The Unnaming (layer 2).** Burn your name from the rolls. This resets Marrow, the Lattice and Vows in exchange for **Ashen Names**, which unlock Rites 7–8 and per-Rite multipliers. It also introduces **Creeds**, a per-run choice between Keeping (idle-leaning) and Letting (active-leaning). The `Num` type swaps to mantissa/exponent here.
 8. **v0.8 The Anatomy.** A map of His body drawn in text and rectangles: chambers, wounds, the ossified lung. Each node costs **Ichor** and opens one branch.

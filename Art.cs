@@ -16,9 +16,10 @@ static class Art
         Heart = Get("heart", () => Make(64, 64, (x, y) => HeartPixel(x, y, false)));
         HeartFace = Get("heart_face", () => Make(64, 64, (x, y) => HeartPixel(x, y, true)));
         foreach (var r in Data.Rites) Icons[r.Id] = Get("rite_" + r.Id, () => Icon(r.Id));
+        Sexton.Init();
     }
 
-    static Texture2D Get(string name, Func<Texture2D> generate)
+    public static Texture2D Get(string name, Func<Texture2D> generate)
     {
         var path = Path.Combine(AppContext.BaseDirectory, "assets", "sprites", name + ".png");
         var tex = File.Exists(path) ? LoadTexture(path) : generate();
@@ -26,7 +27,7 @@ static class Art
         return tex;
     }
 
-    static Texture2D Make(int w, int h, Func<int, int, Color> px)
+    public static Texture2D Make(int w, int h, Func<int, int, Color> px)
     {
         var data = new Color[w * h];
         for (int y = 0; y < h; y++)
@@ -46,6 +47,7 @@ static class Art
         void Save(string name, Texture2D t) { var img = LoadImageFromTexture(t); ExportImage(img, Path.Combine(dir, name + ".png")); UnloadImage(img); }
         Save("wall", Wall); Save("heart", Heart); Save("heart_face", HeartFace);
         foreach (var (id, t) in Icons) Save("rite_" + id, t);
+        Sexton.Dump(Save);
     }
 
     // --- drawing ---

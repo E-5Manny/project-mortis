@@ -60,6 +60,7 @@ static class Fx
     static float _dripTimer;
 
     public static void ForceDrop() => Drops.Add(new Drop());
+    public static Action? OnSplash;  // a drop reached the pool
 
     public static void Drip(float dt, Vector2 from, float surfaceY, double dps)
     {
@@ -81,7 +82,7 @@ static class Fx
             d.Vel += 400 * dt;
             d.Y += d.Vel * dt;
             float y = from.Y + 3 + d.Y;
-            if (y >= surfaceY) { d.Splash = 0; continue; }
+            if (y >= surfaceY) { d.Splash = 0; OnSplash?.Invoke(); continue; }
             DrawCircleV(new Vector2(from.X, y), 2.5f, Ui.Ichor);
             DrawRectangleRec(new Rectangle(from.X - 1, y - 6, 2, 5), ColorAlpha(Ui.Ichor, 0.5f));
         }

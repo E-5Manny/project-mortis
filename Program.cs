@@ -11,6 +11,12 @@ static class App
 
     // screen state
     static int Tab, LedgerTab;
+    static bool SextonView;
+    static int MortifyChoice = 1;
+    static float HoldMortify, HoldAbandon;
+    static string? RevealWound;
+    static float ScreamIn = 45;
+    static int SoundTest, BricksHeard, Lashes;
     static float T;  // animation clock
     static float AccountScroll;
     static float HoldImmure, HoldReset;
@@ -50,7 +56,8 @@ static class App
     static int SeqStanza;
 
     static readonly Rectangle CandleBox = new(12, 336, 206, 44), PoolBox = new(12, 388, 206, 44);
-    static readonly string[] Tabs = ["Rites", "Sacraments", "Immure", "Ledger"];
+    static readonly string[] Tabs = ["Rites", "Sacraments", "Immure", "Wounds", "Ledger"];
+    static readonly int[] TabW = [70, 96, 76, 76, 82];
 
     static readonly string[] Whispers =
     [
@@ -77,6 +84,11 @@ static class App
         CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
         CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
         if (args.Contains("--selftest")) { Environment.Exit(SelfTest.Run()); return; }
+        if (args.Contains("--dump-sounds"))  // Mortis.exe --dump-sounds [dir]: every generated sound as WAV
+        {
+            Audio.Dump(args.SkipWhile(a => a != "--dump-sounds").Skip(1).FirstOrDefault() ?? "sound-dump");
+            return;
+        }
         if (args.Contains("--dump-art"))  // Mortis.exe --dump-art [dir]: export generated textures as PNG templates
         {
             SetTraceLogLevel(TraceLogLevel.Warning);
@@ -89,8 +101,10 @@ static class App
         }
 
         // One copy only: a second launch (e.g. forgot it was hidden) reveals the running one instead of fighting over the save.
-        using var single = new Mutex(true, "Mortis.SingleInstance", out bool first);
-        using var reveal = new EventWaitHandle(false, EventResetMode.AutoReset, "Mortis.Reveal");
+        // keyed by save folder: one copy per save (test runs with MORTIS_SAVE_DIR don't collide with the real game)
+        string key = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(SaveFile.Dir.ToLowerInvariant())))[..12];
+        using var single = new Mutex(true, "Mortis.SingleInstance." + key, out bool first);
+        using var reveal = new EventWaitHandle(false, EventResetMode.AutoReset, "Mortis.Reveal." + key);
         if (!first) { reveal.Set(); return; }
 
         Load();
@@ -101,6 +115,8 @@ static class App
         Fx.Init();
         Art.Init();
         Post.Init();
+        Audio.Init();
+        Fx.OnSplash = () => Audio.Play("drip", 0.25f + 0.2f * Random.Shared.NextSingle(), 0.8f + 0.45f * Random.Shared.NextSingle(), 0.35f + 0.3f * Random.Shared.NextSingle());
         Panic.Start();
         WhisperIdx = Random.Shared.Next(Whispers.Length);
 
@@ -155,6 +171,7 @@ static class App
     {
         if (hide && !Panic.Registered) { MinimizeWindow(); return; }  // no global key: minimize so the taskbar can restore
         Hidden = hide;
+        Audio.Hide(hide);
         if (hide) { SetWindowState(ConfigFlags.HiddenWindow); Save(); return; }
         ClearWindowState(ConfigFlags.HiddenWindow);
         if (IsWindowMinimized()) RestoreWindow();
@@ -192,9 +209,12 @@ static class App
         UpdateWhisper(dt);
         FlashT += dt; ShakeT += dt; EmptyT += dt;
 
-        bool overlay = Away != null || SeqT >= 0;
+        if (G.NewWound is { } nw) { RevealWound = nw; G.NewWound = null; AddLog("A wound opens: " + Data.Wound(nw).Name); Audio.Play("wound", 0.9f); Save(); }
+        bool overlay = Away != null || RevealWound != null || SeqT >= 0;
         if (!overlay) Keys();
 
+        if (SextonView) Sexton.Render(dt, G.Mortifying(), (float)G.MortifyProgress(), G.Mortifications);
+        Sounds(dt);
         BeginTextureMode(Post.Target);
         ClearBackground(Bg0);
         Ui.BeginFrame();
@@ -206,13 +226,14 @@ static class App
         float glow = 0.35f + 0.08f * MathF.Sin(7 * T) * MathF.Sin(3.1f * T);
         DrawCircleGradient(new Vector2(115, 360), 150, ColorAlpha(Candle, glow * 0.55f), ColorAlpha(Candle, 0));
 
-        HeartPanel(dt);
+        LeftPanel(dt);
         switch (Tab)
         {
             case 0: RitesTab(); break;
             case 1: SacramentsTab(); break;
             case 2: ImmureTab(); break;
-            case 3: LedgerTabView(); break;
+            case 3: WoundsTab(); break;
+            case 4: LedgerTabView(); break;
         }
         TabBar();
         Header();
@@ -224,6 +245,7 @@ static class App
         if (!quiet && FlashT < 0.08f) DrawRectangle(0, 0, 630, 520, ColorAlpha(Ichor, 0.12f));
         if (dim) DrawRectangle(0, 0, 630, 520, ColorAlpha(Color.Black, 0.30f));
         if (Away != null) AwayOverlay();
+        else if (RevealWound != null) WoundOverlay();
         if (SeqT >= 0) ImmureSequence(dt);
         EndTextureMode();
 
@@ -233,18 +255,36 @@ static class App
         EndDrawing();
     }
 
+    static void Sounds(float dt)
+    {
+        Audio.Update(G.Settings, IsWindowFocused(), Math.Min(12, G.N("tallow")) / 12f);
+        if (Sexton.Struck)
+        {
+            Audio.Play("lash", 0.75f, 0.9f + 0.2f * Random.Shared.NextSingle(), 0.45f);
+            if (++Lashes % 3 == 0) Audio.PlayAny("groan_", 0.5f);
+        }
+        ScreamIn -= dt;
+        if (ScreamIn > 0) return;
+        ScreamIn = (G.Ready() ? 30 : 60) + Random.Shared.Next(G.Ready() ? 30 : 90);
+        if (!G.Settings.Screams) return;
+        if (Random.Shared.Next(5) == 0) Audio.Play("scream_crowd", 0.5f);
+        else Audio.PlayAny("scream_far_", 0.45f);
+    }
+
     static void Keys()
     {
         if (IsKeyPressed(KeyboardKey.Escape)) SetHidden(true);
         if (IsKeyPressed(KeyboardKey.Space)) DoToll();
         if (IsKeyPressed(KeyboardKey.B)) G.Settings.BuyMode = G.Settings.BuyMode switch { "x1" => "x10", "x10" => "max", _ => "x1" };
-        KeyboardKey[] nums = [KeyboardKey.One, KeyboardKey.Two, KeyboardKey.Three, KeyboardKey.Four];
-        for (int i = 0; i < 4; i++)
+        if (IsKeyPressed(KeyboardKey.S)) SextonView = !SextonView;
+        if (IsKeyPressed(KeyboardKey.M)) G.Settings.SoundOn = !G.Settings.SoundOn;
+        KeyboardKey[] nums = [KeyboardKey.One, KeyboardKey.Two, KeyboardKey.Three, KeyboardKey.Four, KeyboardKey.Five];
+        for (int i = 0; i < 5; i++)
             if (IsKeyPressed(nums[i]) && TabOpen(i)) Tab = i;
     }
 
     static bool ImmureRevealed => G.Immurements > 0 || G.Dolor.Run >= 1e7;
-    static bool TabOpen(int i) => i != 2 || ImmureRevealed;
+    static bool TabOpen(int i) => i switch { 2 => ImmureRevealed, 3 => G.Wounds.Count > 0, _ => true };
 
     // ---------------------------------------------------------------- heart + toll
 
@@ -258,6 +298,7 @@ static class App
         SinceBeat = Math.Min(SinceBeat - NextInterval, 0.05);
         BeatAnim = 0;
         Rings.Add(0);
+        Audio.Play("heart", (G.Mortifying() ? 0.4f : 0.8f) * (SextonView ? 0.55f : 1), G.Mortifying() ? 0.85f : 0.98f + 0.04f * Random.Shared.NextSingle());
         double period = 60 / G.Bpm();
         NextInterval = G.Ready() ? period * Irregular[BeatIdx++ % Irregular.Length] : period;
     }
@@ -270,12 +311,15 @@ static class App
         if (G.Toll(onBeat) is not { } v)
         {
             EmptyT = 0;
-            Override = "The rope is still swinging.";
+            Override = G.Mortifying() ? "No one is at the rope. The Sexton is at the scourge." : "The rope is still swinging.";
+            Audio.Play("thunk", 0.7f);
             OverrideT = 2;
             return;
         }
         Fx.Float("+" + Num(v), HeartC.X, HeartC.Y - 60, onBeat ? GoldBright : Bone);
         FlashT = 0; ShakeT = 0; TollPulse = true;
+        Audio.Play("bell", onBeat ? 1f : 0.8f);
+        if (onBeat) Audio.Play("chime", 0.45f, 0.5f);
         if (onBeat) AddLog($"Tolled in time: +{Num(v)}");
     }
 
@@ -306,9 +350,15 @@ static class App
         float breathe = 0.012f * MathF.Sin(T * 1.3f), pulse = TollPulse ? 1.1f : 1;
         float sx = (1 + 0.07f * beat + breathe) * pulse, sy = (1 + 0.035f * beat - breathe) * pulse;
         TollPulse = false;
-        Art.DrawCentered(Art.Heart, HeartC, sx, sy, Color.White);
+        var flesh = G.Mortifying() ? new Color(150, 128, 124, 255) : Color.White;  // starving: the colour leaves it
+        Art.DrawCentered(Art.Heart, HeartC, sx, sy, flesh);
         GlimpseIn -= dt; GlimpseT += dt;
-        if (GlimpseIn <= 0) { GlimpseIn = 150 + Random.Shared.Next(240); GlimpseT = 0; }
+        if (GlimpseIn <= 0)
+        {
+            GlimpseIn = 150 + Random.Shared.Next(240);
+            GlimpseT = 0;
+            if (G.Settings.Screams) Audio.Play("scream_near", 0.55f, 0.95f + 0.1f * Random.Shared.NextSingle());
+        }
         float glimpse = GlimpseT < 2.4f ? 0.55f * MathF.Sin(MathF.PI * GlimpseT / 2.4f) : 0;
         float face = Math.Max(ReadyGlow, glimpse);
         if (face > 0) Art.DrawCentered(Art.HeartFace, HeartC, sx, sy, ColorAlpha(Color.White, face));
@@ -340,18 +390,91 @@ static class App
             {
                 if (i == G.Tolls)
                 {
-                    float f = (float)(G.TollRegen / Game.TollRegenSec);
+                    float f = (float)(G.TollRegen / G.TollRegenSec());
                     DrawRectangleRec(new Rectangle(r.X, r.Y + 14 * (1 - f), 14, 14 * f), ColorAlpha(Gold, 0.45f));
                 }
                 DrawRectangleLinesEx(r, 1, EmptyT < 0.3f && EmptyT % 0.1f < 0.05f ? IchorBright : Line);
             }
         }
-        TextCentered("Toll: +" + Num(G.TollValue(false)), 115, 292, 16, Bone);
-        TextCentered(G.Tolls < max ? $"next in {Math.Ceiling(Game.TollRegenSec - G.TollRegen)}s" : "rope ready", 115, 312, 13, BoneDim);
-        Fx.Floats(dt);
+        if (G.Mortifying())
+        {
+            TextCentered("The rope hangs untended", 115, 292, 16, BoneDim);
+            TextCentered($"the Sexton returns in {Duration(G.MortifyLeft)}", 115, 312, 13, BoneDim);
+        }
+        else
+        {
+            TextCentered("Toll: +" + Num(G.TollValue(false)), 115, 292, 16, Bone);
+            TextCentered(G.Tolls < max ? $"next in {Math.Ceiling(G.TollRegenSec() - G.TollRegen)}s" : "rope ready", 115, 312, 13, BoneDim);
+        }
+    }
 
+    // ---------------------------------------------------------------- left panel: the Heart or the Sexton
+
+    static void LeftPanel(float dt)
+    {
+        if (SextonView) SextonPanel(dt); else HeartPanel(dt);
+        Fx.Floats(dt);
+        if (TextButton(new Rectangle(8, 54, 105, 18), "The Heart", 13, true, !SextonView)) SextonView = false;
+        if (TextButton(new Rectangle(117, 54, 105, 18), "The Sexton", 13, true, SextonView)) SextonView = true;
         for (int i = 0; i < Log.Count; i++)
             Text(Fit(Log[i], 13, 206), 12, 438 + i * 14, 13, ColorAlpha(BoneDim, 0.6f + 0.4f * i / Math.Max(1, Log.Count - 1)));
+    }
+
+    static void SextonPanel(float dt)
+    {
+        bool whipping = G.Mortifying();
+        DrawCircleGradient(new Vector2(115, 190), 130, ColorAlpha(Candle, 0.14f), ColorAlpha(Candle, 0));
+        // the bell rope he left, still swaying
+        float sway = MathF.Sin(T * 0.7f) * (whipping ? 5 : 2);
+        DrawLineEx(new Vector2(30, 76), new Vector2(30 + sway, 236), 3, new Color(30, 22, 15, 255));
+        DrawLineEx(new Vector2(30, 76), new Vector2(30 + sway, 236), 2, new Color(98, 78, 50, 255));
+        DrawCircleV(new Vector2(30 + sway, 238), 4, new Color(98, 78, 50, 255));
+        Sexton.Draw(new Vector2(43, 78), 3);
+        if (Hover(new Rectangle(43, 78, 144, 192)))
+            HoverText = whipping ? "He does not stop. He does not look up." : $"The Sexton of the Last Bell. {G.Mortifications} mortification{(G.Mortifications == 1 ? "" : "s")} endured.";
+
+        TitleCentered("Mortification", 115, 274, 22, G.CanMortify() || whipping ? Bone : BoneDim);
+        if (whipping)
+        {
+            var bar = new Rectangle(14, 304, 202, 10);
+            Frame(bar, Bg0);
+            DrawRectangleGradientH((int)bar.X + 1, (int)bar.Y + 1, (int)((bar.Width - 2) * G.MortifyProgress()), (int)bar.Height - 2, Blood, IchorBright);
+            TextCentered($"{Duration(G.MortifyLeft)} left of {Duration(G.MortifyTotal)}", 115, 322, 13, Bone);
+            TextCentered("The heart starves. No Dolor until it ends.", 115, 340, 13, BoneDim);
+            var r = new Rectangle(12, 372, 206, 34);
+            if (HoldButton(r, "Hold to break the vow", 1.5f, ref HoldAbandon, true, Crimson))
+            {
+                G.AbandonMortify();
+                AddLog("The vow broken. Nothing was given.");
+            }
+            if (Hover(r)) HoverText = "Breaking it gives nothing, and the time is not returned.";
+            return;
+        }
+        if (!G.CanMortify())
+        {
+            TextCentered("Wall yourself in once, and He will", 115, 310, 13, BoneDim);
+            TextCentered("let you take up the scourge.", 115, 326, 13, BoneDim);
+            return;
+        }
+        for (int i = 0; i < 4; i++)
+        {
+            var r = new Rectangle(12 + i * 52, 302, 50, 20);
+            if (TextButton(r, Data.MortifyLabels[i], 13, true, MortifyChoice == i)) MortifyChoice = i;
+            if (Hover(r)) HoverText = $"{Data.MortifyLabels[i]} at the scourge. Longer vows cut deeper wounds.";
+        }
+        double secs = Data.MortifySeconds[MortifyChoice];
+        TextCentered($"Costs {Num(G.Dps() * secs)} Dolor never made", 115, 330, 13, Bone);
+        var odds = Data.DepthOdds[MortifyChoice];
+        string oddsText = string.Join(" · ", Enumerable.Range(0, 3).Where(d => odds[d] > 0).Select(d => $"{Data.Depths[d]} {odds[d] * 100:0}%"));
+        TextCentered(Fit(oddsText, 13, 206), 115, 348, 13, BoneDim);
+        var hold = new Rectangle(12, 372, 206, 34);
+        if (HoldButton(hold, "Take up the scourge", 1.5f, ref HoldMortify, true, Crimson))
+        {
+            G.BeginMortify(MortifyChoice);
+            AddLog($"The scourge, for {Data.MortifyLabels[MortifyChoice]}.");
+            Save();
+        }
+        if (Hover(hold)) HoverText = "Production stops until it ends, even with the game closed. A wound is given at the end.";
     }
 
     // ---------------------------------------------------------------- header, tabs, whisper bar
@@ -364,7 +487,7 @@ static class App
         Title("Mortis", 12, 2, 24, Lerp(Scale(Bone, 0.8f), IchorBright, (float)Math.Clamp(Math.Log10(G.Dolor.Run + 1) / 8, 0, 1)));
         Text($"He beats {G.Bpm():0} times a minute", 12, 30, 13, BoneDim);
         TitleCentered(Num(G.Dolor.Amount), 315, 0, 30, Bone);
-        TextCentered(Rate(G.Dps()), 315, 32, 13, BoneDim);
+        TextCentered(G.Mortifying() ? "the heart starves" : Rate(G.Dps()), 315, 32, 13, G.Mortifying() ? IchorBright : BoneDim);
         if (G.MarrowEarned > 0)
         {
             string m = $"{G.MarrowEarned} Marrow {Mult(G.MarrowMult(G.MarrowEarned))}";
@@ -376,17 +499,17 @@ static class App
 
     static void TabBar()
     {
-        for (int i = 0; i < 4; i++)
+        for (int i = 0, tx = 230; i < Tabs.Length; tx += TabW[i], i++)
         {
-            var r = new Rectangle(230 + i * 100, 48, 100, 28);
+            var r = new Rectangle(tx, 48, TabW[i], 28);
             bool open = TabOpen(i), active = Tab == i;
             Frame(r, active ? Bg2 : Bg1);
-            if (active) DrawRectangle((int)r.X, 74, 100, 2, Accent);
+            if (active) DrawRectangle((int)r.X, 74, (int)r.Width, 2, Accent);
             if (i == 2 && G.Ready()) DrawRectangleRec(r, ColorAlpha(Crimson, 0.15f + 0.12f * MathF.Sin(T * 4)));
             string label = open ? Tabs[i] : "?";
             bool hover = Hover(r) && open;
-            TitleCentered(label, r.X + 50, 52, 18, active || hover ? Bone : BoneDim);
-            if (i == 1 && G.AnySacAffordable()) DrawCircle((int)r.X + 88, 54, 3, IchorBright);
+            TitleCentered(label, r.X + r.Width / 2, 52, 18, active || hover ? Bone : BoneDim);
+            if (i == 1 && G.AnySacAffordable()) DrawCircle((int)(r.X + r.Width - 7), 54, 3, IchorBright);
             if (open && Pressed(r)) Tab = i;
         }
 
@@ -403,7 +526,8 @@ static class App
                 break;
             case 1: Text("Harsher sacraments, approved in His name.", 238, 80, 13, BoneDim); break;
             case 2: Text("The only death He allows.", 238, 80, 13, BoneDim); break;
-            case 3: Text("What was given, and by whom.", 238, 80, 13, BoneDim); break;
+            case 3: Text("Kept open with salt, they bleed into Him.", 238, 80, 13, BoneDim); break;
+            case 4: Text("What was given, and by whom.", 238, 80, 13, BoneDim); break;
         }
     }
 
@@ -462,6 +586,7 @@ static class App
             if (Button(rect) && G.Buy(r))
             {
                 Fx.ForceDrop();
+                Audio.Play("clack", 0.55f, 0.9f + 0.2f * Random.Shared.NextSingle());
                 if (firstOne) AddLog("First " + r.Name);
             }
             float y = rect.Y;
@@ -522,7 +647,7 @@ static class App
                 continue;
             }
             bool can = G.CanBuySac(s);
-            if (Button(rect) && G.BuySac(s)) AddLog("Sacrament taken: " + s.Name);
+            if (Button(rect) && G.BuySac(s)) { AddLog("Sacrament taken: " + s.Name); Audio.Play("chime", 0.7f); }
             Title(s.Name, rect.X + 8, rect.Y + 2, 18, Bone);
             Text(Fit(s.Effect, 13, 180), rect.X + 8, rect.Y + 26, 13, BoneDim);
             Text(Num(s.Cost, ceil: true) + " Dolor", rect.X + 8, rect.Y + 42, 13, can ? Scale(Bone, shimmer) : CantAfford);
@@ -555,7 +680,7 @@ static class App
         for (int i = 0; i < kept.Count; i++) Text(kept[i], 448, 256 + 16 * i, 13, BoneDim);
 
         bool can = G.CanImmure();
-        if (HoldButton(new Rectangle(310, 392, 240, 48), can ? "Hold to be walled in" : "The chamber will not take you yet", 1.5f, ref HoldImmure, can, Crimson))
+        if (HoldButton(new Rectangle(310, 392, 240, 48), can ? "Hold to be walled in" : G.Mortifying() ? "Not while he bleeds" : "The chamber will not take you yet", 1.5f, ref HoldImmure, can, Crimson))
             StartImmure();
         if (can && !G.Ready() && m > 0) TextCentered("You could go now. The bone would be thin.", 430, 452, 13, BoneDim);
         else TextCentered("The mortar is already wet. It always is.", 430, 452, 13, BoneDim);
@@ -566,6 +691,7 @@ static class App
         int gained = G.Immure();
         SeqStanza = G.Immurements;
         SeqT = 0;
+        BricksHeard = 0;
         FadeT = -1;
         Tab = 0;
         AccountScroll = 0;
@@ -602,6 +728,7 @@ static class App
         {
             const int cols = 30, rows = 12;
             float bw = 630f / cols, bh = 520f / rows, filled = SeqT / bricks * rows;
+            for (; BricksHeard < (int)filled; BricksHeard++) Audio.Play("brick", 0.7f, 0.85f + 0.3f * Random.Shared.NextSingle(), 0.3f + 0.4f * Random.Shared.NextSingle());
             for (int row = 0; row < rows && row < filled; row++)
             {
                 int n = row + 1 <= filled ? cols + 1 : (int)((filled - row) * (cols + 1));
@@ -703,24 +830,30 @@ static class App
     static void SettingsView()
     {
         var set = G.Settings;
-        float y = 132;
-        bool Toggle(string label, bool on)
+        float y = 128;
+        bool Row(string label, string value, bool active)
         {
             Text(label, 242, y + 2, 13, Bone);
-            bool hit = TextButton(new Rectangle(546, y, 70, 18), on ? "On" : "Off", 13, true, on);
-            y += 26;
-            return hit ? !on : on;
+            bool hit = TextButton(new Rectangle(546, y, 70, 18), value, 13, true, active);
+            y += 23;
+            return hit;
         }
+        bool Toggle(string label, bool on) => Row(label, on ? "On" : "Off", on) ? !on : on;
         set.Quiet = Toggle("Quiet mode (no shake, flash or glitches)", set.Quiet);
         set.IdleDim = Toggle("Dim after a minute without input", set.IdleDim);
-        Text("Frame cap while focused", 242, y + 2, 13, Bone);
-        if (TextButton(new Rectangle(546, y, 70, 18), set.FpsCap + " fps", 13)) set.FpsCap = set.FpsCap == 30 ? 20 : 30;
-        y += 34;
+        if (Row("Frame cap while focused", set.FpsCap + " fps", false)) set.FpsCap = set.FpsCap == 30 ? 20 : 30;
+        set.SoundOn = Toggle("Sound (M toggles it)", set.SoundOn);
+        if (Row("Volume", $"{set.Volume * 100:0}%", false)) set.Volume = set.Volume >= 1 ? 0.25f : set.Volume + 0.25f;
+        set.Screams = Toggle("Screams", set.Screams);
+        set.SilentUnfocused = Toggle("Silent when the window isn't focused", set.SilentUnfocused);
+        var names = Audio.Names.ToArray();
+        if (Row($"Test sounds: {names[SoundTest % names.Length]}", "Play", false)) { Audio.Audition(names[SoundTest % names.Length]); SoundTest++; }
+        y += 6;
 
-        Text($"Panic key: {Panic.KeyName} (hide / restore from anywhere)", 242, y, 13, BoneDim);
-        if (!Panic.Registered) Text("Unavailable: another app owns it. Esc minimizes instead.", 242, y + 18, 13, CantAfford);
-        y += 40;
-        Text("Esc hides while focused · Space tolls · B buy mode · 1-4 tabs", 242, y, 13, BoneDim);
+        Text($"Panic key: {Panic.KeyName} hides and silences, from anywhere", 242, y, 13, BoneDim);
+        if (!Panic.Registered) Text("Unavailable: another app owns it. Esc minimizes instead.", 242, y + 16, 13, CantAfford);
+        y += Panic.Registered ? 18 : 34;
+        Text("Esc hides · Space tolls · S Sexton · M mute · B buy mode · 1-5 tabs", 242, y, 13, BoneDim);
         y += 18;
         Text(Fit("Save: " + SaveFile.Dir, 13, 380), 242, y, 13, BoneDim);
 
@@ -731,6 +864,50 @@ static class App
             Tab = 0;
             Save();
         }
+    }
+
+    // ---------------------------------------------------------------- Wounds
+
+    static Color DepthColor(int d) => d switch { 0 => BoneDim, 1 => Gold, _ => IchorBright };
+
+    static void WoundsTab()
+    {
+        var owned = Data.Wounds.Where(w => G.Wounds.ContainsKey(w.Id)).ToList();
+        Text($"Open: {G.OpenWounds.Count} of {Game.OpenSlots}. Click a wound to open or close it.", 242, 103, 13, BoneDim);
+        for (int i = 0; i < owned.Count; i++)
+        {
+            var w = owned[i];
+            int rank = G.Wounds[w.Id];
+            bool open = G.OpenWounds.Contains(w.Id), canOpen = open || G.OpenWounds.Count < Game.OpenSlots;
+            var r = new Rectangle(234, 120 + 33 * i, 392, 32);
+            if (Button(r, canOpen, open ? BgHover : null)) G.ToggleWound(w.Id);
+            if (open) { DrawRectangleLinesEx(r, 1, ColorAlpha(Crimson, 0.8f)); Cross(r.X + r.Width - 12, r.Y + 16, 10, Gold); }
+            Title(w.Name, 242, r.Y, 16, open ? Bone : BoneDim);
+            TextRight($"{Data.Depths[w.Depth]} · {Roman(rank)}", 598, r.Y + 2, 13, DepthColor(w.Depth));
+            string good = w.Good(rank);
+            Text(good, 242, r.Y + 17, 13, open ? Bone : BoneDim);
+            if (w.Bad != null) Text("but " + w.Bad, 242 + Width(good + "   ", 13), r.Y + 17, 13, CantAfford);
+            if (Hover(r)) HoverText = open ? $"{w.Name} is open. It bleeds into Him." : canOpen ? $"{w.Name} has healed over. Click to open it again." : "Three are already open. Close one first.";
+        }
+        if (owned.Count == 0) TextCentered("No wounds yet. Take up the scourge at the Sexton's side.", 430, 200, 13, BoneDim);
+    }
+
+    static void WoundOverlay()
+    {
+        var w = Data.Wound(RevealWound!);
+        int rank = G.Wounds.GetValueOrDefault(w.Id, 1);
+        DrawRectangle(0, 0, 630, 520, ColorAlpha(Bg0, 190 / 255f));
+        var panel = new Rectangle(105, 150, 420, 220);
+        Frame(panel, Bg1);
+        DrawRectangleLinesEx(panel, 1, ColorAlpha(DepthColor(w.Depth), 0.6f));
+        TitleCentered(rank == 1 ? "A wound is given" : "The wound deepens", 315, 164, 22, BoneDim);
+        TitleCentered(w.Name, 315, 196, 32, DepthColor(w.Depth) == BoneDim ? Bone : DepthColor(w.Depth));
+        TextCentered($"{Data.Depths[w.Depth]} · rank {Roman(rank)}", 315, 238, 13, DepthColor(w.Depth));
+        TextCentered(w.Good(rank), 315, 262, 16, Bone);
+        if (w.Bad != null) TextCentered("but " + w.Bad, 315, 284, 16, CantAfford);
+        TextCentered(G.OpenWounds.Contains(w.Id) ? "It is open. It bleeds into Him." : "Three are open already. Choose in the Wounds tab.", 315, 314, 13, BoneDim);
+        TextCentered("Click or press any key", 315, 344, 13, ColorAlpha(BoneDim, 0.7f));
+        if (AnyKey || IsMouseButtonPressed(MouseButton.Left)) RevealWound = null;
     }
 
     // ---------------------------------------------------------------- offline overlay

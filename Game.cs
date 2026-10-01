@@ -6,6 +6,9 @@ record Rite(string Id, string Name, string Flavor, double BaseCost, double Growt
 record Sacrament(string Id, string Name, string Effect, double Cost, string? Target,
                  Func<Game, double> Mult, Func<Game, bool> Unlock, string Hint);
 
+// Mods target a rite id, "all", "toll", "costs" (rite prices) or "tollRegen" (seconds per charge); Mult gets the rank.
+record Wound(string Id, string Name, int Depth, (string Target, Func<int, double> Mult)[] Mods, Func<int, string> Good, string? Bad);
+
 static class Data
 {
     public static readonly Rite[] Rites =
@@ -37,6 +40,30 @@ static class Data
         new("S11", "Sackcloth Edict", "All ×1.5", 4e6, "all", X(1.5), Run(2e6), "Gather 2M Dolor this run."),
         new("S12", "Brass Bellows", "Sepulchral Engines ×2", 1e7, "engine", X(2), Own("engine", 5), "Own 5 Sepulchral Engines."),
     ];
+
+
+    // Wounds: rewards of Mortification. Depth 0 Shallow, 1 Deep, 2 Grievous. Rank 1..5; deeper ones cost something.
+    static (string, Func<int, double>) M(string target, Func<int, double> f) => (target, f);
+    public static readonly Wound[] Wounds =
+    [
+        new("salted_knees", "Salted Knees", 0, [M("kneeler", r => 1.5 + 0.5 * r)], r => $"Salt-Kneelers ×{1.5 + 0.5 * r:0.0#}", null),
+        new("ninth_stripe", "The Ninth Stripe", 0, [M("choir", r => 1.5 + 0.5 * r)], r => $"Flagellant Choirs ×{1.5 + 0.5 * r:0.0#}", null),
+        new("tallow_fingers", "Tallow Fingers", 0, [M("tallow", r => 1.5 + 0.5 * r)], r => $"Tallow Saints ×{1.5 + 0.5 * r:0.0#}", null),
+        new("rope_palms", "Rope-Burnt Palms", 0, [M("toll", r => 1.5 + 0.5 * r), M("tollRegen", _ => 1.33)], r => $"Tolls ×{1.5 + 0.5 * r:0.0#}", "the rope takes 40s to rest"),
+        new("mortar_mouth", "Mortar in the Mouth", 1, [M("mason", r => 2 + 0.5 * r)], r => $"Charnel Masons ×{2 + 0.5 * r:0.0#}", null),
+        new("weeping_shoulder", "The Weeping Shoulder", 1, [M("all", r => 1.15 + 0.10 * r)], r => $"All ×{1.15 + 0.10 * r:0.00}", null),
+        new("wheel_kiss", "The Wheel's Kiss", 1, [M("wheel", r => 2.5 + 0.5 * r), M("kneeler", _ => 0.5)], r => $"Dawn Wheels ×{2.5 + 0.5 * r:0.0#}", "Salt-Kneelers ×0.5"),
+        new("brass_lung", "A Brass Lung", 1, [M("engine", r => 2.5 + 0.5 * r), M("toll", _ => 0.5)], r => $"Sepulchral Engines ×{2.5 + 0.5 * r:0.0#}", "Tolls ×0.5"),
+        new("open_side", "The Open Side", 2, [M("all", r => 1.6 + 0.2 * r), M("costs", _ => 1.3)], r => $"All ×{1.6 + 0.2 * r:0.0#}", "Rites cost ×1.3"),
+        new("hollow_eye", "The Hollow Eye", 2, [M("costs", r => 0.9 - 0.04 * r), M("all", _ => 0.9)], r => $"Rites cost ×{0.9 - 0.04 * r:0.00}", "All ×0.9"),
+        new("unhealing", "The Unhealing", 2, [M("all", r => 1.3 + 0.15 * r), M("toll", _ => 0.25)], r => $"All ×{1.3 + 0.15 * r:0.00}", "Tolls ×0.25"),
+    ];
+    public static Wound Wound(string id) => Wounds.First(w => w.Id == id);
+    public static readonly string[] Depths = ["Shallow", "Deep", "Grievous"];
+
+    public static readonly double[] MortifySeconds = [15 * 60, 60 * 60, 4 * 3600, 8 * 3600];
+    public static readonly string[] MortifyLabels = ["15m", "1h", "4h", "8h"];
+    public static readonly double[][] DepthOdds = [[0.8, 0.2, 0], [0.4, 0.55, 0.05], [0, 0.6, 0.4], [0, 0.25, 0.75]];
 
     public static Rite Rite(string id) => Rites.First(r => r.Id == id);
     public static Sacrament Sac(string id) => Sacraments.First(s => s.Id == id);
@@ -71,12 +98,15 @@ class Settings
     public string BuyMode = "x1";  // x1 | x10 | max
     public bool Quiet, IdleDim = true;
     public int FpsCap = 30;
+    public bool SoundOn = true, Screams = true, SilentUnfocused;
+    public float Volume = 0.5f;
 }
 
 // The whole save. Public fields are the JSON; methods are the rules.
 class Game
 {
-    public const double Gate = 1e8, K = 10, TollRegenSec = 30;
+    public const double Gate = 1e8, K = 10;
+    public const int OpenSlots = 3, MaxRank = 5;
 
     public int Version = 1;  // ponytail: no migration list until a v2 save format exists
     public DateTime LastSeenUtc = DateTime.UtcNow;
@@ -89,6 +119,13 @@ class Game
     public Stats Stats = new();
     public Settings Settings = new();
 
+    // Mortification: the Sexton leaves the bell; no Dolor until it ends. Wounds persist through Immurement.
+    public double MortifyLeft, MortifyTotal;
+    public int MortifyTier = -1, Mortifications;
+    public Dictionary<string, int> Wounds = new();  // id -> rank
+    public HashSet<string> OpenWounds = [];
+    [System.Text.Json.Serialization.JsonIgnore] public string? NewWound;  // set when a session ends; the UI shows and clears it
+
     public int N(string id) => Owned.GetValueOrDefault(id);
     public bool Has(string sac) => SacBought.Contains(sac);
 
@@ -98,6 +135,9 @@ class Game
         double m = 1;
         foreach (var s in Data.Sacraments)
             if (s.Target == target && Has(s.Id)) m *= s.Mult(this);
+        foreach (var id in OpenWounds)
+            foreach (var (t, f) in Data.Wound(id).Mods)
+                if (t == target) m *= f(Wounds.GetValueOrDefault(id, 1));
         return m;
     }
     public double MarrowMult(int marrow) => 1 + 0.10 * marrow;
@@ -110,11 +150,11 @@ class Game
     public double Cost(Rite r, int k)
     {
         double g = r.Growth;
-        return r.BaseCost * Math.Pow(g, N(r.Id)) * (Math.Pow(g, k) - 1) / (g - 1);
+        return r.BaseCost * MultFor("costs") * Math.Pow(g, N(r.Id)) * (Math.Pow(g, k) - 1) / (g - 1);
     }
     public int MaxAffordable(Rite r)
     {
-        double first = r.BaseCost * Math.Pow(r.Growth, N(r.Id));
+        double first = r.BaseCost * MultFor("costs") * Math.Pow(r.Growth, N(r.Id));
         if (Dolor.Amount < first) return 0;
         int k = (int)Math.Floor(Math.Log(Dolor.Amount * (r.Growth - 1) / first + 1, r.Growth));
         while (k > 0 && Cost(r, k) > Dolor.Amount) k--;  // float guard at exact boundaries
@@ -150,9 +190,10 @@ class Game
     // --- toll ---
     public int MaxTolls() => Has("S5") ? 8 : 5;
     public double TollValue(bool onBeat) => Math.Max(5, 10 * Dps()) * MultFor("toll") * (onBeat ? 1.5 : 1);
+    public double TollRegenSec() => 30 * MultFor("tollRegen");
     public double? Toll(bool onBeat)
     {
-        if (Tolls <= 0) return null;
+        if (Tolls <= 0 || Mortifying()) return null;
         if (Tolls == MaxTolls()) TollRegen = 0;  // regen timer starts when the first charge is spent
         Tolls--;
         double v = TollValue(onBeat);
@@ -167,14 +208,21 @@ class Game
     public void Tick(double dt)
     {
         if (dt <= 0) return;
-        double dps = Dps();
-        Gain(dps * dt);
+        double dps = Dps(), productive = dt;
+        if (MortifyLeft > 0)
+        {
+            double m = Math.Min(dt, MortifyLeft);
+            MortifyLeft -= m;
+            productive = dt - m;
+            if (MortifyLeft <= 0) CompleteMortify();
+        }
+        Gain(dps * productive);
         if (Tolls < MaxTolls())
         {
             TollRegen += dt;
-            int add = (int)(TollRegen / TollRegenSec);
+            int add = (int)(TollRegen / TollRegenSec());
             Tolls = Math.Min(MaxTolls(), Tolls + add);
-            TollRegen -= add * TollRegenSec;
+            TollRegen -= add * TollRegenSec();
         }
         if (Tolls >= MaxTolls()) TollRegen = 0;  // timer pauses at max
         Stats.PlayTimeSec += dt;
@@ -196,18 +244,21 @@ class Game
     // Grant time spent away (closed game, or PC asleep). Negative deltas (clock went back) count as 0.
     public (double away, double gained, bool capped) ApplyAway(double seconds)
     {
-        double away = Math.Clamp(seconds, 0, OfflineCap());
+        // Mortification time always passes in full; only productive time is capped.
+        double mort = Math.Clamp(MortifyLeft, 0, Math.Max(0, seconds));
+        double rest = Math.Max(0, seconds) - mort;
+        double away = mort + Math.Min(rest, OfflineCap());
         double before = Dolor.AllTime;
         Tick(away);
         if (seconds >= 60) { Tolls = MaxTolls(); TollRegen = 0; }  // real absences only: quick relaunches must not refill the rope
-        return (away, Dolor.AllTime - before, seconds > OfflineCap());
+        return (away, Dolor.AllTime - before, rest > OfflineCap());
     }
 
     // --- Immurement ---
     public static int TotalFor(double lifetime) => (int)Math.Floor(K * Math.Sqrt(lifetime / Gate));
     public static double LifetimeFor(int marrow) => Gate * Math.Pow(marrow / K, 2);
     public int Pending() => Math.Max(0, TotalFor(Dolor.AllTime) - MarrowEarned);
-    public bool CanImmure() => Dolor.Run >= Gate && Pending() >= 1;
+    public bool CanImmure() => Dolor.Run >= Gate && Pending() >= 1 && !Mortifying();
     public bool Ready() => CanImmure() && (MarrowEarned == 0 || Pending() >= MarrowEarned);
     public double NextMarrowAt() => LifetimeFor(TotalFor(Dolor.AllTime) + 1);
 
@@ -245,6 +296,47 @@ class Game
         return Math.Clamp((Dolor.AllTime - lo) / (hi - lo), 0, 1);
     }
 
-    public double Bpm() => Math.Min(140, 40 + 12 * Math.Log10(Dps() + 1));
+    // --- Mortification ---
+    public bool Mortifying() => MortifyLeft > 0;
+    public bool CanMortify() => Immurements > 0 && !Mortifying();
+    public double MortifyProgress() => MortifyTotal > 0 ? 1 - MortifyLeft / MortifyTotal : 0;
+
+    public void BeginMortify(int tier)
+    {
+        if (!CanMortify()) return;
+        MortifyTier = tier;
+        MortifyTotal = MortifyLeft = Data.MortifySeconds[tier];
+    }
+
+    public void AbandonMortify() { MortifyLeft = 0; MortifyTotal = 0; MortifyTier = -1; }
+
+    // Roll a depth for the tier, then a wound of that depth that can still deepen (falling back to any that can).
+    void CompleteMortify()
+    {
+        var odds = Data.DepthOdds[Math.Clamp(MortifyTier, 0, 3)];
+        double roll = Random.Shared.NextDouble();
+        int depth = roll < odds[0] ? 0 : roll < odds[0] + odds[1] ? 1 : 2;
+        bool CanDeepen(Wound w) => Wounds.GetValueOrDefault(w.Id) < MaxRank;
+        var pool = Data.Wounds.Where(w => w.Depth == depth && CanDeepen(w)).ToArray();
+        if (pool.Length == 0) pool = Data.Wounds.Where(CanDeepen).ToArray();
+        MortifyTotal = 0;
+        MortifyTier = -1;
+        Mortifications++;
+        if (pool.Length == 0) { NewWound = null; return; }
+        var w = pool[Random.Shared.Next(pool.Length)];
+        Wounds[w.Id] = Wounds.GetValueOrDefault(w.Id) + 1;
+        if (OpenWounds.Count < OpenSlots) OpenWounds.Add(w.Id);
+        NewWound = w.Id;
+    }
+
+    public bool ToggleWound(string id)
+    {
+        if (OpenWounds.Remove(id)) return true;
+        if (!Wounds.ContainsKey(id) || OpenWounds.Count >= OpenSlots) return false;
+        OpenWounds.Add(id);
+        return true;
+    }
+
+    public double Bpm() => Mortifying() ? 30 : Math.Min(140, 40 + 12 * Math.Log10(Dps() + 1));  // it starves while he is away
     public double Souls() => Math.Floor(Dolor.AllTime / 1000);
 }

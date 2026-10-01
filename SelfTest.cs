@@ -59,6 +59,41 @@ static class SelfTest
         Check(im.Immure() == 10 && im.MarrowEarned == 10, "first Immurement grants 10");
         Check(im.Has("S8") && !im.Has("S1") && im.N("choir") == 0 && im.Dolor.Run == 0 && im.Dolor.AllTime == 1e8, "reset/persist lists");
 
+        // Mortification: production stops, time passes in full even past the away cap, a wound is given
+        var mo = new Game();
+        mo.Owned["kneeler"] = 10; mo.Immurements = 1;
+        mo.BeginMortify(0);
+        mo.Tick(60);
+        Check(mo.Dolor.AllTime == 0 && mo.Mortifying(), "no Dolor while mortifying");
+        Check(mo.Toll(false) == null, "no tolling while mortifying");
+        mo.Tick(900);  // 60s past the end
+        Check(!mo.Mortifying() && Near(mo.Dolor.AllTime, 10 * 0.3 * 60), "production resumes after the end");
+        Check(mo.NewWound != null && mo.Wounds.Count == 1 && mo.OpenWounds.Count == 1 && mo.Mortifications == 1, "a wound is given and opened");
+        var mo2 = new Game { Immurements = 1 };
+        mo2.Owned["kneeler"] = 10;
+        mo2.BeginMortify(3);  // 8h
+        var aw = mo2.ApplyAway(20 * 3600);  // 20h away: 8h mortified + 8h capped production
+        Check(!mo2.Mortifying() && Near(aw.gained, 10 * 0.3 * 8 * 3600) && aw.capped, "away: mortify time is uncapped, production capped");
+        var wg = new Game();
+        wg.Owned["kneeler"] = 1;
+        double before = wg.Dps();
+        wg.Wounds["salted_knees"] = 2; wg.OpenWounds.Add("salted_knees");
+        Check(Near(wg.Dps(), before * 2.5), "open wound multiplies its target");
+        wg.Wounds["open_side"] = 1; wg.OpenWounds.Add("open_side");
+        Check(Near(wg.Cost(kn, 1), 15 * 1.15 * 1.3), "trade-off raises costs");  // second kneeler, ×1.3
+        var wb = SaveFile.Deserialize<Game>(SaveFile.Serialize(wg))!;
+        Check(wb.Wounds["salted_knees"] == 2 && wb.OpenWounds.Contains("open_side"), "wounds survive save");
+
+        // every generated sound is finite, audible, unclipped; loops join without a click
+        foreach (var (name, smp, loop) in Audio.All())
+        {
+            double peak = 0, sum = 0;
+            foreach (var v in smp) { peak = Math.Max(peak, Math.Abs(v)); sum += v * v; }
+            double rms = Math.Sqrt(sum / smp.Length);
+            Check(!double.IsNaN(peak) && peak <= 1.0 && rms > 0.005, $"sound {name}: peak {peak:0.000} rms {rms:0.0000}");
+            if (loop) Check(Math.Abs(smp[0] - smp[^1]) < 0.05, $"loop {name} seam jump {Math.Abs(smp[0] - smp[^1]):0.000}");
+        }
+
         // greedy player: first Immurement should land in the 45-90 min band (balance sim said ~49 min)
         double run1 = Greedy(new Game(), out var after);
         Console.WriteLine($"greedy run 1: {Ui.Duration(run1)} to first Immurement ({after.MarrowEarned} Marrow)");
