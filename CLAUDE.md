@@ -94,6 +94,7 @@ A grimdark desktop idle game (C# / .NET 10 + Raylib-cs 8.1.0, which wraps raylib
 - **Sound is synthesized:** filters, a Freeverb-style reverb, bell partials, formant voices.
   - Any `assets/sounds/<name>.wav`, `.ogg` or `.mp3` overrides a sound; `--dump-sounds` lists the names.
   - Claude can't hear the result, so check sounds numerically and with waveform plots, then ask the user to listen through Settings → Test sounds.
+  - User feedback: the heartbeat at full volume drowned everything else. It now defaults to Soft (0.3), gets quieter as the BPM rises, and has an Off/Soft/Strong setting. Keep alert sounds high and bright (like the visitor's handbell) so the low heartbeat can't mask them.
   - User feedback so far: the Sexton's original long, breathy groan "sounded sexual". Pain is now short, strangled, creaky grunts and teeth hisses, on only about half the lashes. Keep it that way.
 
 ## Office safety (user requirement)
@@ -103,7 +104,7 @@ The user plays at work, so the game has to stay safe to have open:
 - Esc hides the window while it has focus, and M mutes;
 - volume defaults to 50%, and screams, Omens and silent-when-unfocused are all toggles.
 
-Never add anything that pops up, makes noise or grabs focus while the window is hidden or unfocused.
+Never add anything that pops up or grabs focus, and nothing makes noise while the window is hidden. Sound while it's merely unfocused is allowed (ambience, screams, the visitor's handbell), but it must go through `Audio.Play`, so the user's Silent-when-unfocused setting can mute it.
 
 **Keep it light on a work PC.** The frame cap is `Settings.FpsCap` (30 or 20) when focused and 10 when unfocused. While hidden, the loop still ticks the game but sleeps 50ms and draws nothing, so don't add work to that path. Rendering is primitives and textures plus one shader pass. It costs about 10% of one core when focused.
 

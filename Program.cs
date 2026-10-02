@@ -352,7 +352,10 @@ static class App
         SinceBeat = Math.Min(SinceBeat - NextInterval, 0.05);
         BeatAnim = 0;
         Rings.Add(0);
-        Audio.Play("heart", (G.Mortifying() ? 0.4f : 0.8f) * (SextonView ? 0.55f : 1), G.Mortifying() ? 0.85f : 0.98f + 0.04f * Random.Shared.NextSingle());
+        float[] level = [0, 0.3f, 0.6f];
+        float beatVol = level[Math.Clamp(G.Settings.Heartbeat, 0, 2)] * (G.Mortifying() ? 0.5f : 1) * (SextonView ? 0.55f : 1)
+                        * MathF.Min(1, MathF.Sqrt(70 / (float)G.Bpm()));  // a fast heart beats softer, so it never drums over everything
+        if (beatVol > 0) Audio.Play("heart", beatVol, G.Mortifying() ? 0.85f : 0.98f + 0.04f * Random.Shared.NextSingle());
         double period = 60 / G.Bpm();
         NextInterval = G.Ready() ? period * Irregular[BeatIdx++ % Irregular.Length] : period;
     }
@@ -467,6 +470,7 @@ static class App
     static void LeftPanel(float dt)
     {
         if (SextonView) SextonPanel(dt); else HeartPanel(dt);
+        if (VisitWait >= 0) VisitorCard();
         Fx.Floats(dt);
         if (TextButton(new Rectangle(8, 54, 105, 18), "The Heart", 13, true, !SextonView)) SextonView = false;
         if (TextButton(new Rectangle(117, 54, 105, 18), "The Sexton", 13, true, SextonView)) SextonView = true;
@@ -1000,7 +1004,7 @@ static class App
         {
             VisitWait += dt;
             KnockIn -= dt;
-            if (KnockIn <= 0 && !overlay) { Audio.Play("knock", 0.45f); KnockIn = 90; }
+            if (KnockIn <= 0 && !overlay) { Audio.Play("handbell", 0.6f); KnockIn = 60; }
             if (VisitWait < 600) return;
             VisitWait = -1;  // he gives up waiting
             AddLog("The knocking stopped.");
@@ -1014,6 +1018,25 @@ static class App
         VisitWait = 0;
         KnockIn = 0;
         AtDoor = G.NextBidding();
+    }
+
+    // A visitor waiting at the door: his face, a pulsing frame, and how long he will still wait. Click to answer.
+    static void VisitorCard()
+    {
+        // over the candles and pool by the heart; over the sprite in the Sexton view, clear of its controls
+        var r = new Rectangle(8, SextonView ? 80 : 334, 214, 100);
+        float pulse = 0.5f + 0.5f * MathF.Sin(T * 3);
+        DrawRectangleRec(new Rectangle(r.X - 3, r.Y - 3, r.Width + 6, r.Height + 6), ColorAlpha(Gold, 0.10f + 0.12f * pulse));
+        if (Button(r, true, Bg1)) { OpenVisit(); return; }
+        DrawRectangleLinesEx(r, 2, Lerp(Gold, GoldBright, pulse));
+        Prophet.DrawFace(new Rectangle(r.X + 8, r.Y + 8, 72, 84));
+        Title("At the door", r.X + 88, r.Y + 6, 22, Lerp(Gold, GoldBright, pulse));
+        Text(Data.Prophet?.Name ?? "A visitor", r.X + 88, r.Y + 36, 13, Bone);
+        Text("click to answer", r.X + 88, r.Y + 56, 13, ColorAlpha(BoneDim, 0.6f + 0.4f * pulse));
+        var bar = new Rectangle(r.X + 88, r.Y + 80, 112, 6);
+        Frame(bar, Bg0);
+        DrawRectangle((int)bar.X + 1, (int)bar.Y + 1, (int)((bar.Width - 2) * Math.Max(0, 1 - VisitWait / 600)), 4, ColorAlpha(Gold, 0.8f));
+        if (Hover(r)) HoverText = $"He will wait {Duration(Math.Max(0, 600 - VisitWait))} more. Answer the door.";
     }
 
     static void OpenVisit()
@@ -1186,7 +1209,7 @@ static class App
         {
             Text(label, 242, y + 2, 13, Bone);
             bool hit = TextButton(new Rectangle(546, y, 70, 18), value, 13, true, active);
-            y += 23;
+            y += 21;
             return hit;
         }
         bool Toggle(string label, bool on) => Row(label, on ? "On" : "Off", on) ? !on : on;
@@ -1195,10 +1218,12 @@ static class App
         if (Row("Frame cap while focused", set.FpsCap + " fps", false)) set.FpsCap = set.FpsCap == 30 ? 20 : 30;
         set.SoundOn = Toggle("Sound (M toggles it)", set.SoundOn);
         if (Row("Volume", $"{set.Volume * 100:0}%", false)) set.Volume = set.Volume >= 1 ? 0.25f : set.Volume + 0.25f;
+        string[] beats = ["Off", "Soft", "Strong"];
+        if (Row("Heartbeat", beats[Math.Clamp(set.Heartbeat, 0, 2)], set.Heartbeat > 0)) set.Heartbeat = (set.Heartbeat + 1) % 3;
         set.Screams = Toggle("Screams", set.Screams);
         set.SilentUnfocused = Toggle("Silent when the window isn't focused", set.SilentUnfocused);
         set.Omens = Toggle("Omens (an eye opens in the wall now and then)", set.Omens);
-        set.Visitors = Toggle("Visitors knocking at the door", set.Visitors);
+        set.Visitors = Toggle("Visitors at the door", set.Visitors);
         var names = Audio.Names.ToArray();
         if (Row($"Test sounds: {names[SoundTest % names.Length]}", "Play", false)) { Audio.Audition(names[SoundTest % names.Length]); SoundTest++; }
         y += 6;

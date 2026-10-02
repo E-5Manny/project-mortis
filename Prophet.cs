@@ -15,6 +15,10 @@ static class Prophet
 
     public static void Dump(Action<string, Texture2D> save) { for (int i = 0; i < _frames.Length; i++) save($"prophet_{i}", _frames[i]); }
 
+    // The face inside the hood, for the visitor card.
+    public static void DrawFace(Rectangle dest) =>
+        DrawTexturePro(_frames[0], new Rectangle(14, 12, 36, 42), dest, Vector2.Zero, 0, Color.White);
+
     public static void Draw(Vector2 pos, int scale, bool mouthOpen, Color tint) =>
         DrawTexturePro(_frames[mouthOpen ? 1 : 0], new Rectangle(0, 0, W, H), new Rectangle(pos.X, pos.Y, W * scale, H * scale), Vector2.Zero, 0, tint);
 

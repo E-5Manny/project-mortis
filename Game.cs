@@ -245,6 +245,7 @@ class Settings
     public bool SoundOn = true, Screams = true, SilentUnfocused;
     public float Volume = 0.5f;
     public bool Omens = true, Visitors = true;
+    public int Heartbeat = 1;  // 0 off, 1 soft, 2 strong
 }
 
 // The whole save. Public fields are the JSON; methods are the rules.

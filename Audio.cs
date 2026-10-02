@@ -22,7 +22,7 @@ static class Audio
         ("lash", Lash, 2), ("grunt_1", () => Grunt(1), 1), ("grunt_2", () => Grunt(2), 1), ("hiss", Hiss, 1),
         ("scream_far_1", () => Scream(1, true), 1), ("scream_far_2", () => Scream(2, true), 1),
         ("scream_far_3", () => Scream(3, true), 1), ("scream_crowd", Crowd, 1), ("scream_near", () => Scream(1, false), 1),
-        ("brick", Brick, 3), ("wound", WoundSwell, 1), ("knock", Knock, 1), ("murmur", Murmur, 3),
+        ("brick", Brick, 3), ("wound", WoundSwell, 1), ("handbell", Handbell, 1), ("murmur", Murmur, 3),
     ];
     static readonly (string name, Func<float[]> gen)[] Beds = [("drone", Drone), ("candles", Candles)];
 
@@ -517,19 +517,20 @@ static class Audio
         return Normalize(Reverb(o, 0.4, 0.86, 2.0), 0.8);
     }
 
-    // Two knocks on the bell-tower door: wood, then the hollow behind it.
-    static float[] Knock()
+    // A visitor at the door: three strokes of a small cracked handbell. High and bright on purpose, so it carries
+    // over the low heartbeat and drone (the old wooden knock drowned under them).
+    static float[] Handbell()
     {
         var r = new Random(70);
-        var o = Buf(0.7);
-        foreach (var at in new[] { 0.0, 0.29 })
+        var o = Buf(2.4);
+        double[] gains = [1, 0.8, 0.65];
+        for (int k = 0; k < 3; k++)
         {
-            var k = Buf(0.25);
-            for (int i = 0; i < k.Length; i++)
-                k[i] = (float)(Noise(r) * Math.Exp(-T(i) * 60) + 0.8 * Math.Sin(2 * Math.PI * 90 * T(i)) * Math.Exp(-T(i) * 35));
-            Add(o, Bandpass(k, 350, 1.2), at, 2);
+            var stroke = BellPartials(740, [(1, 1, 0.8), (2.0, 0.5, 0.45), (2.76, 0.45, 0.32), (4.1, 0.25, 0.18), (5.4, 0.15, 0.1)], 1.2, r);
+            for (int i = 0; i < stroke.Length; i++) stroke[i] *= (float)(1 + 0.35 * Math.Sin(2 * Math.PI * 31 * T(i)));  // the crack: a buzz in the ring
+            Add(o, stroke, k * 0.42, gains[k]);
         }
-        return Normalize(Reverb(Lowpass(o, 1500), 0.3, 0.84, 1.0), 0.7);
+        return Normalize(Reverb(o, 0.3, 0.82, 1.2), 0.6);
     }
 
     // One syllable of an old man's murmur, for dialog text as it types: breath through a slack mouth.
