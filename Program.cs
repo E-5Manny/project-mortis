@@ -45,6 +45,8 @@ static class App
     static float AccountScroll;
     static float HoldImmure, HoldReset;
     static bool Hidden;
+    static Vector2 ViewAt;  // where the game sits on screen: 0,0 in a window, inside the frame in full screen
+    static bool FullView => IsWindowState(ConfigFlags.BorderlessWindowMode);
 
     // heart
     static readonly Vector2 HeartC = new(115, 178);
@@ -135,7 +137,7 @@ static class App
 
         Load();
         SetTraceLogLevel(TraceLogLevel.Warning);
-        InitWindow(630, 520, "Mortis");
+        InitWindow(G.Settings.Large ? 945 : 630, G.Settings.Large ? 780 : 520, "Mortis");
         SetExitKey(KeyboardKey.Null);  // Esc hides, it doesn't quit
         Art.SetWindowIcon();
         Ui.Init();
@@ -145,6 +147,7 @@ static class App
         Audio.Init();
         Fx.OnSplash = () => Audio.Play("drip", 0.25f + 0.2f * Random.Shared.NextSingle(), 0.8f + 0.45f * Random.Shared.NextSingle(), 0.35f + 0.3f * Random.Shared.NextSingle());
         Panic.Start();
+        ApplyWindow();
         WhisperIdx = Random.Shared.Next(Whispers.Length);
 
         var clock = Stopwatch.StartNew();
@@ -170,6 +173,7 @@ static class App
             }
 
             SetTargetFPS(IsWindowFocused() ? G.Settings.FpsCap : 10);
+            UpdateView();
             RunFrame((float)Math.Min(dt, 0.1));
         }
         Save();
@@ -205,6 +209,33 @@ static class App
         ClearWindowState(ConfigFlags.HiddenWindow);
         if (IsWindowMinimized()) RestoreWindow();
         SetWindowFocused();
+    }
+
+    // Puts the window in the size or mode Settings asks for. Full screen is borderless, so Alt-Tab, Esc and the panic key behave as in a window.
+    static void ApplyWindow()
+    {
+        var set = G.Settings;
+        if (set.Fullscreen != FullView) ToggleBorderlessWindowed();
+        if (set.Fullscreen) return;
+        int w = set.Large ? 945 : 630, h = set.Large ? 780 : 520;
+        if (GetScreenWidth() == w && GetScreenHeight() == h) return;
+        SetWindowSize(w, h);
+        int m = GetCurrentMonitor();
+        var at = GetMonitorPosition(m);
+        SetWindowPosition((int)at.X + Math.Max(0, (GetMonitorWidth(m) - w) / 2), (int)at.Y + Math.Max(0, (GetMonitorHeight(m) - h) / 2));
+    }
+
+    // Every screen is laid out at 630×520. The scale fits that to the window or, in full screen, inside the frame,
+    // and the mouse is mapped back to layout pixels so no widget needs to know.
+    static void UpdateView()
+    {
+        float sw = GetScreenWidth(), sh = GetScreenHeight();
+        // half steps keep the art's 2-pixel grain an even number of screen pixels; the 50px margin is for the frame
+        float s = FullView ? Math.Max(1, MathF.Floor(Math.Min(sw / 680, sh / 570) * 2) / 2) : Math.Max(0.5f, sw / 630);
+        if (s != Ui.Zoom) { Ui.SetZoom(s); Post.Resize(s); }
+        ViewAt = new Vector2(MathF.Floor((sw - 630 * s) / 2), MathF.Floor((sh - 520 * s) / 2));
+        SetMouseOffset(-(int)ViewAt.X, -(int)ViewAt.Y);
+        SetMouseScale(1 / s, 1 / s);
     }
 
     static void ShowAway((double away, double gained, bool capped) r)
@@ -273,7 +304,7 @@ static class App
         if (OmenAge >= 0 && !overlay && Vector2.Distance(GetMousePosition(), OmenPos) < 16 && IsMouseButtonPressed(MouseButton.Left)) { ClaimOmen(); Ui.Consume(); }
 
         var shake = !quiet && ShakeT < 0.12f ? new Vector2(Random.Shared.Next(-2, 3), Random.Shared.Next(-2, 3)) : Vector2.Zero;
-        BeginMode2D(new Camera2D { Offset = shake, Zoom = 1 });
+        BeginMode2D(new Camera2D { Offset = shake * Ui.Zoom, Zoom = Ui.Zoom });
         Art.DrawWall();
         float glow = 0.35f + 0.08f * MathF.Sin(7 * T) * MathF.Sin(3.1f * T);
         DrawCircleGradient(new Vector2(115, 360), 150, ColorAlpha(Candle, glow * 0.55f), ColorAlpha(Candle, 0));
@@ -294,6 +325,7 @@ static class App
         Fx.Ash(dt, T, G.Dps(), quiet, dim);
         WhisperBar();
         EndMode2D();
+        BeginMode2D(new Camera2D { Zoom = Ui.Zoom });  // the overlays don't shake
 
         if (!quiet && FlashT < 0.08f) DrawRectangle(0, 0, 630, 520, ColorAlpha(Ichor, 0.12f));
         if (dim) DrawRectangle(0, 0, 630, 520, ColorAlpha(Color.Black, 0.30f));
@@ -301,11 +333,14 @@ static class App
         else if (RevealWound != null) WoundOverlay();
         else if (Talk != null) { Ui.Blocked = false; DialogOverlay(dt); }
         if (SeqT >= 0) ImmureSequence(dt);
+        EndMode2D();
         EndTextureMode();
 
         BeginDrawing();
+        ClearBackground(Color.Black);
         float beatFx = BeatAnim < 0.3f ? 1 - BeatAnim / 0.3f : 0;
-        Post.Present(T, beatFx, FlashT, ReadyGlow, quiet, HeartC);
+        if (FullView) Frame.Draw(ViewAt, Ui.Zoom, T, beatFx);
+        Post.Present(ViewAt, T, beatFx, FlashT, ReadyGlow, quiet, HeartC);
         EndDrawing();
     }
 
@@ -334,6 +369,7 @@ static class App
         if (IsKeyPressed(KeyboardKey.B)) G.Settings.BuyMode = G.Settings.BuyMode switch { "x1" => "x10", "x10" => "max", _ => "x1" };
         if (IsKeyPressed(KeyboardKey.S)) SextonView = !SextonView;
         if (IsKeyPressed(KeyboardKey.M)) G.Settings.SoundOn = !G.Settings.SoundOn;
+        if (IsKeyPressed(KeyboardKey.F11)) { G.Settings.Fullscreen = !G.Settings.Fullscreen; ApplyWindow(); }
         KeyboardKey[] nums = [KeyboardKey.One, KeyboardKey.Two, KeyboardKey.Three, KeyboardKey.Four, KeyboardKey.Five];
         for (int i = 0; i < 5; i++)
             if (IsKeyPressed(nums[i]) && TabOpen(i)) Tab = i;
@@ -660,7 +696,7 @@ static class App
         float max = Math.Max(0, contentH - ContentArea.Height + 4);
         if (CheckCollisionPointRec(GetMousePosition(), ContentArea) && !Ui.Blocked) scroll -= GetMouseWheelMove() * 40;
         scroll = Math.Clamp(scroll, 0, max);
-        BeginScissorMode((int)ContentArea.X, (int)ContentArea.Y, (int)ContentArea.Width, (int)ContentArea.Height);
+        Ui.Scissor(ContentArea.X, ContentArea.Y, ContentArea.Width, ContentArea.Height);
         Ui.Clip = ContentArea;
         if (max > 0)  // a thin scrollbar on the right edge
         {
@@ -1015,7 +1051,7 @@ static class App
 
         float contentH = lines.Count * 15 + 8, viewH = 352;
         AccountScroll = Math.Clamp(AccountScroll - GetMouseWheelMove() * 30, 0, Math.Max(0, contentH - viewH));
-        BeginScissorMode(234, 126, 392, (int)viewH);
+        Ui.Scissor(234, 126, 392, viewH);
         for (int i = 0; i < lines.Count; i++)
             Text(lines[i].text, lines[i].head ? 242 : 256, 128 + i * 15 - AccountScroll, 13, lines[i].head ? Gold : Bone, lines[i].head ? Face.Title : Face.Body);
         EndScissorMode();
@@ -1280,12 +1316,19 @@ static class App
         {
             Text(label, 242, y + 2, 13, Bone);
             bool hit = TextButton(new Rectangle(546, y, 70, 18), value, 13, true, active);
-            y += 21;
+            y += 20;
             return hit;
         }
         bool Toggle(string label, bool on) => Row(label, on ? "On" : "Off", on) ? !on : on;
         set.Quiet = Toggle("Quiet mode (no shake, flash or glitches)", set.Quiet);
         set.IdleDim = Toggle("Dim after a minute without input", set.IdleDim);
+        string[] views = ["630×520", "945×780", "Full screen"];
+        int view = set.Fullscreen ? 2 : set.Large ? 1 : 0;
+        if (Row("Window (F11 toggles full screen)", views[view], view > 0))
+        {
+            (set.Large, set.Fullscreen) = view switch { 0 => (true, false), 1 => (true, true), _ => (false, false) };
+            ApplyWindow();
+        }
         if (Row("Frame cap while focused", set.FpsCap + " fps", false)) set.FpsCap = set.FpsCap == 30 ? 20 : 30;
         set.SoundOn = Toggle("Sound (M toggles it)", set.SoundOn);
         if (Row("Volume", $"{set.Volume * 100:0}%", false)) set.Volume = set.Volume >= 1 ? 0.25f : set.Volume + 0.25f;
@@ -1302,15 +1345,16 @@ static class App
         Text($"Panic key: {Panic.KeyName} hides and silences, from anywhere", 242, y, 13, BoneDim);
         if (!Panic.Registered) Text("Unavailable: another app owns it. Esc minimizes instead.", 242, y + 16, 13, CantAfford);
         y += Panic.Registered ? 18 : 34;
-        Text("Esc hides · Space tolls · S Sexton · M mute · B buy mode · 1-5 tabs", 242, y, 13, BoneDim);
+        Text("Esc hides · Space tolls · S Sexton · M mute · B buy mode · 1-5 tabs · F11", 242, y, 13, BoneDim);
         y += 18;
         Text(Fit("Save: " + SaveFile.Dir, 13, 380), 242, y, 13, BoneDim);
 
-        if (HoldButton(new Rectangle(310, 420, 240, 40), "Hold 3s to erase everything", 3f, ref HoldReset, true, Crimson))
+        if (HoldButton(new Rectangle(310, 444, 240, 34), "Hold 3s to erase everything", 3f, ref HoldReset, true, Crimson))
         {
             G = new Game();
             Log.Clear();
             Tab = 0;
+            ApplyWindow();
             Save();
         }
     }

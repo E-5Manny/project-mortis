@@ -1,7 +1,7 @@
 # Mortis
 
 A grimdark desktop idle game (C# / .NET 10 + Raylib-cs 8.1.0, which wraps raylib 6.0).
-- **Window:** a fixed 630×520 window that the user keeps open at work.
+- **Window:** every screen is laid out at 630×520. Settings → Window offers 630×520, 945×780 (1.5×) and full screen (F11), where a carved frame fills the rest of the screen. It started as a small window kept open at work; now the user also plays at home, and friends play it too.
 - **Tone:** original IP in the spirit of Blasphemous and Mortal Shell.
 - **Design:** `DESIGN.md` is the source of truth. It covers the premise, glossary, pillars, roadmap and IP rules. Read it before adding content.
 
@@ -29,7 +29,7 @@ A grimdark desktop idle game (C# / .NET 10 + Raylib-cs 8.1.0, which wraps raylib
 
   Careful: Alt followed by Space opens the Windows system menu.
 
-  On Linux the window is X11 (XWayland): find it by its name with python-xlib, drive it with XTest (`Xlib.ext.xtest`), and capture it with `import -window <id>`. Hold each click for 0.3s, because an unfocused window runs at 10 fps, and move the pointer over the window before each capture, or the capture comes back stale. Set `"soundOn": false` in the fixture.
+  On Linux the window is X11 (XWayland): find it by its name with python-xlib, drive it with XTest (`Xlib.ext.xtest`), and capture it with `import -window <id>`. Click in window pixels, so multiply layout coordinates by the zoom (and add the offset in full screen). Hold each click for 0.3s, because an unfocused window runs at 10 fps, and move the pointer over the window before each capture, or the capture comes back stale. Set `"soundOn": false` in the fixture.
 
 ## Files
 
@@ -44,7 +44,8 @@ A grimdark desktop idle game (C# / .NET 10 + Raylib-cs 8.1.0, which wraps raylib
 | `Prophet.cs` | The Lampless Prophet's 64×80 dialog portrait (frames `prophet_0` with the mouth shut and `prophet_1` with it open), baked like the Sexton. |
 | `Wife.cs` | Ysmay's portrait (frames `wife_0` and `wife_1`), with the same API as `Prophet`. |
 | `assets/biddings.json` | Visitor and Bidding content. `"id": "_visitor"` is the Prophet and `"id": "_wife"` is Ysmay; the rest are Biddings, and those with `"by": "wife"` are her chapters, told in file order. It's loaded at the top of `Main`, before `--selftest`, which checks every Bidding uses known objectives and targets. |
-| `Post.cs` | The full-screen post-process shader (grain, colour grade, vignette, fringing, Toll ripple), with a fallback if it fails to compile. |
+| `Frame.cs` | The full-screen frame: the inside of Him, generated for the screen it fills. Rotting masonry and muscle, the game held open in a wound by iron hooks, ribs and two half-buried spines, and torn hollows with tallow candles melted onto skulls. Live: the flames, drops running down the baked blood runs, and a darkening between heartbeats. User feedback: the first version (clean bricks, brass bosses, neat arches) was "too cartoonish"; keep it raw and decayed. Teeth along the wound read as a barcode at this grain, so they were dropped. |
+| `Post.cs` | The post-process shader (grain, colour grade, vignette, fringing, Toll ripple), with a fallback if it fails to compile. |
 | `Audio.cs` | Every sound, synthesized at startup on a background thread, with overrides. |
 | `SaveFile.cs` | JSON save: writes `save.json.tmp`, then `File.Replace` into `save.json`, keeping the previous file as `save.json.bak`. Loading falls back to the `.bak`. A `save.json` that won't load is moved aside to `save.corrupt-<unixtime>.json` and never deleted, including when the `.bak` rescues it. |
 | `Panic.cs` | Global hotkey Ctrl+Alt+Shift+Q, via `RegisterHotKey` on its own message-loop thread. |
@@ -88,6 +89,11 @@ A grimdark desktop idle game (C# / .NET 10 + Raylib-cs 8.1.0, which wraps raylib
 
 ## Raylib pitfalls (each of these has bitten already)
 
+- **Layout pixels vs render pixels.** Everything is laid out in 630×520 layout pixels and drawn through a `Camera2D` with `Zoom = Ui.Zoom` (1, 1.5, or a half step that fits full screen). `App.UpdateView` sets the zoom and calls `SetMouseScale` and `SetMouseOffset`, so `GetMousePosition` already returns layout pixels. Two things don't follow the camera:
+  - scissor rects, so use `Ui.Scissor` instead of `BeginScissorMode`;
+  - fonts, which `Ui` loads at the zoomed pixel size (and reloads when the zoom changes), so text stays sharp while the art scales up with hard pixel edges.
+  - Anything drawn outside the main texture pass (the frame) is in screen pixels.
+- **Switching window modes changes the screen size mid-frame.** `ApplyWindow` runs inside `RunFrame`, so anything cached against the screen size must also key on the game's position (`Frame` does).
 - **`BeginTextureMode` can't nest.** Every frame renders into `Post.Target`, so anything else that renders into its own render texture (`Sexton.Render`) must run **before** the main `BeginTextureMode`. Inside the frame, only blit it.
 - **Triangle winding:** raylib culls triangles by winding order, so use `Art.Tri(a, b, c, color)`, which draws both orders.
 - **`GetKeyPressed()` drains a queue.** It's read once per frame into `AnyKey`. Modifier keys are excluded so that Alt-Tabbing in doesn't dismiss the away screen.
@@ -99,7 +105,7 @@ A grimdark desktop idle game (C# / .NET 10 + Raylib-cs 8.1.0, which wraps raylib
 ## Art and sound conventions
 
 - **Art is generated at half resolution** and drawn at 2× (3× for the Sexton) with point filtering, so it reads as 16-bit pixel art: 4-tone ramps, ordered dither, an ink outline.
-  - Any PNG in `assets/sprites/` with the generated texture's name replaces it: `wall`, `heart`, `heart_face`, `rite_<id>`, `sexton_whip_0..5`, `sexton_idle_0..1`, `icon` (16×16, the window icon).
+  - Any PNG in `assets/sprites/` with the generated texture's name replaces it: `wall`, `heart`, `heart_face`, `rite_<id>`, `sexton_whip_0..5`, `sexton_idle_0..1`, `prophet_0..1`, `wife_0..1`, `icon` (16×16, the window icon), and `frame`. The frame override is scaled to cover the screen with the game drawn over its middle; `--dump-art` writes the 1920×1080 version (640×360 art pixels, the game in 162..478 × 50..310) as a template.
   - The exe's icon is the checked-in `assets\icon.ico`. `--dump-art` writes a fresh `icon.ico` from `Art.AppIcon`; copy it over to change the exe's icon.
   - Keep that override hook when adding art. The user plans real pixel art later.
 - **Sound is synthesized:** filters, a Freeverb-style reverb, bell partials, formant voices.
@@ -115,9 +121,9 @@ The user plays at work, so the game has to stay safe to have open:
 - Esc hides the window while it has focus, and M mutes;
 - volume defaults to 50%, and screams, Omens and silent-when-unfocused are all toggles.
 
-Never add anything that pops up or grabs focus, and nothing makes noise while the window is hidden. Sound while it's merely unfocused is allowed (ambience, screams, the visitor's handbell), but it must go through `Audio.Play`, so the user's Silent-when-unfocused setting can mute it.
+Never add anything that pops up or grabs focus, and nothing makes noise while the window is hidden. Full screen is borderless (not exclusive), so Alt-Tab, Esc and the panic key still work; it only starts in full screen if the player left it that way. Sound while it's merely unfocused is allowed (ambience, screams, the visitor's handbell), but it must go through `Audio.Play`, so the user's Silent-when-unfocused setting can mute it.
 
-**Keep it light on a work PC.** The frame cap is `Settings.FpsCap` (30 or 20) when focused and 10 when unfocused. While hidden, the loop still ticks the game but sleeps 50ms and draws nothing, so don't add work to that path. Rendering is primitives and textures plus one shader pass. It costs about 10% of one core when focused.
+**Keep it light on a work PC.** The frame cap is `Settings.FpsCap` (30 or 20) when focused and 10 when unfocused. While hidden, the loop still ticks the game but sleeps 50ms and draws nothing, so don't add work to that path. Rendering is primitives and textures plus one shader pass, at the zoomed size (the frame is a single texture, generated once per screen size). It costs about 10% of one core when focused at 630×520.
 
 ## Content and IP
 

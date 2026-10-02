@@ -34,6 +34,21 @@ static class Ui
     public static string? HoverText;                   // detail line for the whisper bar
     public static Rectangle? Clip;                     // while set, widgets only respond inside it (scrolled lists)
 
+    // Zoom: render pixels per layout pixel. Every screen is laid out at 630×520 and drawn through a camera with this zoom;
+    // fonts are rasterised at the zoomed size, so text stays sharp while the point-filtered art scales up chunky.
+    public static float Zoom { get; private set; } = 1;
+    public static void SetZoom(float s)
+    {
+        if (s == Zoom) return;
+        Zoom = s;
+        foreach (var f in Fonts.Values) if (f.Texture.Id != GetFontDefault().Texture.Id) UnloadFont(f);
+        Fonts.Clear();
+    }
+
+    // Scissor rects are in render pixels, not layout pixels, so they don't follow the camera.
+    public static void Scissor(float x, float y, float w, float h) =>
+        BeginScissorMode((int)(x * Zoom), (int)(y * Zoom), (int)MathF.Ceiling(w * Zoom), (int)MathF.Ceiling(h * Zoom));
+
     public static void Init()
     {
         var dir = Path.Combine(AppContext.BaseDirectory, "assets", "fonts");
@@ -51,15 +66,16 @@ static class Ui
     {
         if (Fonts.TryGetValue((face, size), out var f)) return f;
         var path = face == Face.Title ? _titleFont : _bodyFont;
-        f = path != null ? LoadFontEx(path, Real(size, face), Codepoints, Codepoints.Length) : GetFontDefault();
+        f = path != null ? LoadFontEx(path, (int)MathF.Round(Real(size, face) * Zoom), Codepoints, Codepoints.Length) : GetFontDefault();
         SetTextureFilter(f.Texture, TextureFilter.Bilinear);
         return Fonts[(face, size)] = f;
     }
 
     // --- text --- (y is the top of a `size`-pixel line; bumped body text is nudged up to sit in the same box)
+    static float Snap(float v) => MathF.Round(v * Zoom) / Zoom;  // whole render pixels, or the glyphs blur
     public static float Width(string s, int size, Face face = Face.Body) => MeasureTextEx(F(size, face), s, Real(size, face), 0).X;
     public static void Text(string s, float x, float y, int size, Color c, Face face = Face.Body) =>
-        DrawTextEx(F(size, face), s, new Vector2(MathF.Round(x), MathF.Round(y - (Real(size, face) - size) / 2f)), Real(size, face), 0, c);
+        DrawTextEx(F(size, face), s, new Vector2(Snap(x), Snap(y - (Real(size, face) - size) / 2f)), Real(size, face), 0, c);
     public static void TextCentered(string s, float cx, float y, int size, Color c, Face face = Face.Body) => Text(s, cx - Width(s, size, face) / 2, y, size, c, face);
     public static void TextRight(string s, float right, float y, int size, Color c, Face face = Face.Body) => Text(s, right - Width(s, size, face), y, size, c, face);
     public static void Title(string s, float x, float y, int size, Color c) => Text(s, x, y, size, c, Face.Title);

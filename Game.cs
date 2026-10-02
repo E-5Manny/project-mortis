@@ -267,6 +267,7 @@ class Settings
     public float Volume = 0.5f;
     public bool Omens = true, Visitors = true;
     public int Heartbeat = 1;  // 0 off, 1 soft, 2 strong
+    public bool Large, Fullscreen;  // 945×780 instead of 630×520; full screen keeps Large for when it's left
 }
 
 // The whole save. Public fields are the JSON; methods are the rules.

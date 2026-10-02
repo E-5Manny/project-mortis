@@ -53,6 +53,7 @@ static class Art
         Sexton.Dump(Save);
         Prophet.Dump(Save);
         Wife.Dump(Save);
+        Save("frame", Frame.Template());
         var icon = AppIcon(16); ExportImage(icon, Path.Combine(dir, "icon.png")); UnloadImage(icon);
         WriteIco(Path.Combine(dir, "icon.ico"));
     }
@@ -153,7 +154,7 @@ static class Art
         DrawTexturePro(Icons[riteId], new Rectangle(0, 0, Icons[riteId].Width, Icons[riteId].Height), new Rectangle(x, y, 48, 48), Vector2.Zero, 0, tint);
 
     // --- noise ---
-    static float Hash(int x, int y, int seed)
+    internal static float Hash(int x, int y, int seed)
     {
         unchecked
         {
@@ -174,14 +175,14 @@ static class Art
         return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
     }
 
-    static float Fbm(float x, float y, int seed, int octaves = 4)
+    internal static float Fbm(float x, float y, int seed, int octaves = 4)
     {
         float sum = 0, amp = 0.5f, norm = 0;
         for (int i = 0; i < octaves; i++) { sum += amp * Value(x, y, seed + i * 17); norm += amp; x *= 2; y *= 2; amp *= 0.5f; }
         return sum / norm;
     }
 
-    static float Ridge(float x, float y, int seed) => 1 - MathF.Abs(2 * Fbm(x, y, seed, 3) - 1);  // 1 on the ridge lines
+    internal static float Ridge(float x, float y, int seed) => 1 - MathF.Abs(2 * Fbm(x, y, seed, 3) - 1);  // 1 on the ridge lines
 
     static Color Rgb(float r, float g, float b, float a = 1) =>
         new((byte)Math.Clamp(r * 255, 0, 255), (byte)Math.Clamp(g * 255, 0, 255), (byte)Math.Clamp(b * 255, 0, 255), (byte)Math.Clamp(a * 255, 0, 255));
