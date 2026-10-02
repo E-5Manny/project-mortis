@@ -9,9 +9,11 @@ A grimdark desktop idle game (C# / .NET 10 + Raylib-cs 8.1.0, which wraps raylib
 
 - **Build and run:** `run.cmd` builds and launches. `dotnet` may not be on PATH, so use `"C:\Program Files\dotnet\dotnet.exe"`.
 - **If the user's game is running,** `bin\Debug\net10.0\win-x64\Mortis.exe` is locked and `dotnet build` fails. Never kill it, because it holds their real save. Build elsewhere instead: `dotnet build -o <scratch>\build`.
+- **On Linux** (the user's home machine): the SDK is in `~/.dotnet`, and the csproj pins `win-x64`, so pass the runtime: `~/.dotnet/dotnet build -r linux-x64 -o <scratch>/build`, then run `<scratch>/build/Mortis` with `DOTNET_ROOT=~/.dotnet`. The panic hotkey and the reveal-on-second-launch event are Windows-only and switch themselves off; everything else runs.
 - **Command-line options.** It's a WinExe with no console of its own, so pipe the output (`| cat` or `| more`):
   - `Mortis.exe --selftest` runs rule asserts, a save round trip, sanity checks on the generated audio, and a greedy-player pacing sim. The exit code is the number of failures. **Keep it passing**, and add a check for any new rule.
   - Setting `MORTIS_SIM_TIMELINE=1` makes `--selftest` also print when each Rite and Sacrament first arrives. Use it for balancing.
+  - Setting `MORTIS_SIM_SAVE=<a copy of save.json>` makes `--selftest` also run four greedy runs from that save, buying the Deep between them. Never point it at the real save.
   - `Mortis.exe --dump-art [dir]` and `--dump-sounds [dir]` export every generated texture (PNG) and sound (WAV).
 - **`--selftest` runs at the very top of `Main`,** before `InitWindow`, the mutex or loading. `Game`, `Ui.Num` / `Ui.Duration` and the `Audio.All()` synthesis must therefore keep working without raylib being initialized. Because it runs before the single-instance check, a scratch build's self-test works while the user's game is open.
 - **Installer:** `installer\build.cmd` publishes a self-contained single-file Release into `publish\` and runs Inno Setup 6 (`installer\Mortis.iss`) to produce `dist\MortisSetup-<version>.exe`. It installs per user with no admin prompt, and uninstalling leaves the save alone. The version comes from `<Version>` in the csproj. It never touches `bin\Debug`, so it's safe while the game is running.
@@ -27,6 +29,8 @@ A grimdark desktop idle game (C# / .NET 10 + Raylib-cs 8.1.0, which wraps raylib
 
   Careful: Alt followed by Space opens the Windows system menu.
 
+  On Linux the window is X11 (XWayland): find it by its name with python-xlib, drive it with XTest (`Xlib.ext.xtest`), and capture it with `import -window <id>`. Hold each click for 0.3s, because an unfocused window runs at 10 fps, and move the pointer over the window before each capture, or the capture comes back stale. Set `"soundOn": false` in the fixture.
+
 ## Files
 
 | File | Role |
@@ -38,7 +42,8 @@ A grimdark desktop idle game (C# / .NET 10 + Raylib-cs 8.1.0, which wraps raylib
 | `Art.cs` | Generated pixel-art textures (the wall, the heart, the heart with a face, Rite icons), with PNG overrides and the dump. |
 | `Sexton.cs` | The 48×64 Sexton sprite. Frames are baked per pixel from poses, and welts and blood are drawn over them at runtime. |
 | `Prophet.cs` | The Lampless Prophet's 64×80 dialog portrait (frames `prophet_0` with the mouth shut and `prophet_1` with it open), baked like the Sexton. |
-| `assets/biddings.json` | Visitor and Bidding content. The first element (`"id": "_visitor"`) is the visitor; the rest are Biddings. It's loaded at the top of `Main`, before `--selftest`, which checks every Bidding uses known objectives and targets. |
+| `Wife.cs` | Ysmay's portrait (frames `wife_0` and `wife_1`), with the same API as `Prophet`. |
+| `assets/biddings.json` | Visitor and Bidding content. `"id": "_visitor"` is the Prophet and `"id": "_wife"` is Ysmay; the rest are Biddings, and those with `"by": "wife"` are her chapters, told in file order. It's loaded at the top of `Main`, before `--selftest`, which checks every Bidding uses known objectives and targets. |
 | `Post.cs` | The full-screen post-process shader (grain, colour grade, vignette, fringing, Toll ripple), with a fallback if it fails to compile. |
 | `Audio.cs` | Every sound, synthesized at startup on a background thread, with overrides. |
 | `SaveFile.cs` | JSON save: writes `save.json.tmp`, then `File.Replace` into `save.json`, keeping the previous file as `save.json.bak`. Loading falls back to the `.bak`. A `save.json` that won't load is moved aside to `save.corrupt-<unixtime>.json` and never deleted, including when the `.bak` rescues it. |
@@ -52,11 +57,13 @@ A grimdark desktop idle game (C# / .NET 10 + Raylib-cs 8.1.0, which wraps raylib
   - A new field needs a sensible initializer, because old saves simply lack it.
   - Transient state needs `[JsonIgnore]`.
   - Use methods, not get-only properties, for derived values; otherwise they get serialized.
-- **Data ids are save keys.** `Owned`, `SacBought`, `Wounds`, `OpenWounds`, `Lattice`, `DeaconsOff` and `Admitted` store ids. `Data.Rite`, `Sac`, `Wound`, `Node` and `Vow` use `First()`, so an id in a save that no longer exists throws right after load. Never rename or remove an id unless `Game.Migrate()` rewrites it, with a `Version` bump.
+- **Data ids are save keys.** `Owned`, `SacBought`, `Wounds`, `OpenWounds`, `Lattice`, `Deep`, `DeaconsOff` and `Admitted` store ids. `Data.Rite`, `Sac`, `Wound`, `Node`, `DeepNode` and `Vow` use `First()`, so an id in a save that no longer exists throws right after load. Never rename or remove an id unless `Game.Migrate()` rewrites it, with a `Version` bump.
+- **Ysmay's chapter order is a save key too.** `WifeKept` holds one bool per chapter told, by position, so only ever add chapters at the end.
 - **Immurement resets only what `Game.ResetRun()` lists:** Dolor, Owned, Revealed, Sacraments (S8 is kept), Tolls, regen and the run stats. Everything else carries over. When you add per-run state, clear it there. Don't touch persistent state (Wounds, Lattice, Admissions, Marrow).
 - **Gate and Marrow:** `Game.Gate = 4e10`, `K = 10`, and `TotalFor(L) = floor(K·gain·√(L/Gate))`. Changing `Gate` silently strands existing players' Marrow. If you change it, bump `Version` and scale `Dolor.AllTime` and `Dolor.Run` by the ratio in `Game.Migrate()`, which shows how it was done for v1 to v2.
-- **Spending Marrow never weakens it.** The passive bonus uses `MarrowEarned`; the Lattice spends from `MarrowEarned - MarrowSpent`.
-- **Effects** go through `Game.MultFor(target)`, which combines bought Sacraments, open Wounds and Lattice nodes. The targets are a Rite id, `all`, `toll`, `costs` and `tollRegen`. One-off effects are checked by id (`S5`, `S8`, `S22`, `on_the_beat`, `fourth_wound`, the Deacon Vows and so on).
+- **Spending Marrow never weakens it.** The passive bonus uses `MarrowEarned`; the Lattice and the Deep spend from `MarrowEarned - MarrowSpent`.
+- **The Deep** (`Data.Deep`, `Game.Deepen`): one repeatable node under each finished Lattice branch. A rank costs 300 × 5^rank Marrow and multiplies its target (All ×1.15, Tolls ×1.25, `marrow` ×1.05), compounding. Veterans are very sensitive to these numbers, because Tolls are most of their income: the first draft (50 × 2^rank, ×1.25 / ×1.5 / ×1.1) cut runs from minutes to seconds. Change them only with the veteran sim.
+- **Effects** go through `Game.MultFor(target)`, which combines bought Sacraments, open Wounds, Lattice nodes, Deep ranks, an active Bidding's burden and timed boons and curses. The targets are a Rite id, `all`, `toll`, `costs`, `tollRegen` and `marrow` (Marrow from Immurement, the Deep only). One-off effects are checked by id (`S5`, `S8`, `S22`, `on_the_beat`, `fourth_wound`, the Deacon Vows and so on).
 - **Time:** `Tick(dt)` takes a variable dt; production is linear, so a variable step is exact.
   - `ApplyAway` handles a closed game or a sleeping PC (any frame gap over 60s).
   - Mortification time always passes in full; only productive time is capped.
@@ -67,10 +74,14 @@ A grimdark desktop idle game (C# / .NET 10 + Raylib-cs 8.1.0, which wraps raylib
   - `abstain` breaks on any purchase, deacons included (`Stats.Purchases`). `silence` breaks on any Toll. Both succeed when their time runs out.
   - Immurement drops an active Bidding without a curse.
   - The visit itself (knock, 10-minute wait, dialog) lives in `App` and opens only when the user clicks the whisper-bar notice. Never make it pop up by itself.
+  - **Ysmay** (`Game.NextBidding`) takes every other knock once the Prophet has been met and there are two Immurements, until her chapters run out. A chapter moves on whether it was kept or failed; refusing her costs nothing and she brings the same chapter back. Her chapters have boons but no curses, and they stay out of the Prophet's stats.
+  - **Refusing the Prophet** (`Game.Refuse`) three times in a row leaves his `spurned` curse and brings his next visit forward. Accepting one of his Biddings resets the count.
+  - `App` calls `TickBidding` before it shows new Admissions, so a Bidding's closing line isn't overwritten by the Admission it earns.
 - **Deacons only buy their own Rites** (`Game.Deacons()`): the best-value Rite if it is one of theirs, otherwise their cheapest one, and then only if it costs at most 2% of current Dolor. Without this, the first Deacon drained Dolor and made run 2 slower than run 1.
 - **Pacing targets,** checked by the self-test:
   - the greedy run 1 reaches the first Immurement in 70 to 110 min, about 1.5 to 2 h for a person (currently about 1h27m);
-  - run 2 is at least 30% faster.
+  - run 2 is at least 30% faster;
+  - a synthetic veteran (1300 Marrow, the whole Lattice) plays four runs to Ready with and without the Deep. With it, each run must still be longer than the last, and between 1× and 3× faster than without (currently 4m39s, 6m40s, 8m40s and 12m20s against 7m21s, 11m20s, 17m20s and 26m39s).
 
   After any change to numbers, rerun the self-test with the timeline and look for gaps over about 5 minutes without anything new.
 - **Number formatting:** `Ui.Num(v, ceil: true)` for costs, plain (floor) for amounts, so "displayed cost ≤ displayed amount" always means affordable. All formatting is invariant culture: the machine is pt-BR, and `Main` forces `InvariantCulture`.
@@ -113,7 +124,8 @@ Never add anything that pops up or grabs focus, and nothing makes noise while th
 - **Original IP only.** Never use proper nouns or signature terms from Blasphemous or Mortal Shell. `DESIGN.md` has the ban list and the words deliberately avoided: Penance is called Mortification; Relics are Wounds; there's no Martyrdom, Ossuary or Confession.
 - **Tone:** complicity and guilt rather than gore for its own sake. Flavor text never excuses the player.
 - **Next on the roadmap:** v0.6 Ordeals, then v0.7 The Unnaming, a second prestige layer. v0.7 needs a mantissa/exponent number type before values pass 1e300; it's all `double` today.
-- **Known open question:** veteran and late-game pacing. The sim only covers runs 1 and 2, but players with hundreds of Marrow plus the full Lattice and Deacons will be much faster. Tune with the timeline, starting from a save at that level.
+- **Ordeals, when they come:** the user chose "Stripped, but keep Deacons". Inside an Ordeal there's no Marrow bonus, Lattice, Wounds or other Vows; the Deacons still buy, but the Tithe's 1M head start is off; goals are fixed, tuned to about 1h each with the greedy sim.
+- **Known open question:** veteran and late-game pacing. The user's real save (2026-10-02) had 1294 Marrow, 5 Immurements, the full Lattice and a fastest run of 72s; before the Deep, greedy runs from it reached Ready in 14m, 9m, 13m and 21m. Veteran runs are short, and the Deep shortens them further, though each still takes longer than the last. Rerun `MORTIS_SIM_SAVE` on a copy of that save after any change here.
 
 ## Working with this user
 

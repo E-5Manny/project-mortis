@@ -13,6 +13,7 @@ static class Panic
 
     public static void Start()
     {
+        if (!OperatingSystem.IsWindows()) return;  // no user32: Registered stays false, and Esc minimizes instead
         var ready = new ManualResetEventSlim();  // not disposed: the thread may Set() after a Wait timeout
         var t = new Thread(() =>
         {

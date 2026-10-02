@@ -43,9 +43,10 @@ You are **the Sexton of the Last Bell**. You rang the bell that called the knife
 | Deacons | Automation (v0.2). |
 | Vows | Milestone rewards unlocked by total Marrow earned (v0.2). |
 | The Lattice | The tree you spend Marrow on (v0.3). |
+| The Deep | Repeatable nodes under each finished branch of the Lattice: a sink for Marrow that has no floor. |
 | Admissions | Achievements. Each one is a line of guilt worth +1% (v0.4). |
 | Mortification | The Sexton leaves the bell to scourge himself for 15m, 1h, 4h or 8h. No Dolor is made until it ends. Unlocks after the first Immurement. |
-| Visitors / Biddings | Strangers knock at the bell-tower door, never interrupting, and offer Biddings in a visual-novel dialog. Accepting brings a burden while it lasts, a boon if you keep it, and sometimes a curse if you fail. The first visitor is the Lampless Prophet. |
+| Visitors / Biddings | Strangers knock at the bell-tower door, never interrupting, and offer Biddings in a visual-novel dialog. Accepting brings a burden while it lasts, a boon if you keep it, and sometimes a curse if you fail. The first visitor is the Lampless Prophet; the second is Ysmay, the Sexton's wife. |
 | Wounds | What Mortification gives. They come in three depths (Shallow, Deep, Grievous) and five ranks, and deeper ones carry a trade-off. Three can be open at once, and they persist through Immurement. |
 | Ordeals | Challenge runs (v0.6). |
 | The Unnaming / Ashen Names | Prestige layer 2 and its currency (v0.7). |
@@ -115,9 +116,14 @@ You are **the Sexton of the Last Bell**. You rang the bell that called the knife
    Each Vow can be switched off. Deacons buy the best-value Rite, but only buy their own Rites when cheap (2% of Dolor) if a better buy exists. They keep buying while you're away, simulated in one-minute steps.
 3. **v0.3 The Lattice** (shipped 2026-10-01). A root plus three branches of five (Flesh, Bell, Bone), 181 Marrow in all. Spending Marrow never lowers the passive bonus, which counts Marrow earned.
 4. **v0.4 Admissions and Omens** (shipped 2026-10-01).
-   - **Admissions:** 43 lines of guilt, each +1% to all production.
+   - **Admissions:** 49 lines of guilt, each +1% to all production.
    - **Omens:** an eye opens in the wall every 5 to 15 minutes while the window is visible. Clicking it grants ×3 for 60s, 15 minutes of production, or a full rope. Omens can be switched off and never appear during Mortification.
-*Visitors (2026-10-01):* the Lampless Prophet knocks every 15 to 30 minutes after the first Immurement, never during Mortification or while a Bidding is active. He waits 10 minutes. His dialog is typed out, Accept or Refuse sits on the last page, and refusing is free for now. Content lives in `assets/biddings.json`, with objectives toll, beat, buy, gather, abstain, silence and mortify. Bidding timers run only while the window is visible. Ideas for later: more visitors, branching dialog, consequences for refusing, multi-step arcs.
+*Visitors (2026-10-01):* the Lampless Prophet knocks every 15 to 30 minutes after the first Immurement, never during Mortification or while a Bidding is active. He waits 10 minutes. His dialog is typed out, Accept or Refuse sits on the last page, and refusing is free for now. Content lives in `assets/biddings.json`, with objectives toll, beat, buy, gather, abstain, silence and mortify. Bidding timers run only while the window is visible. Ideas for later: more visitors, branching dialog.
+
+*Ysmay and the Deep (2026-10-02):*
+   - **Ysmay,** the Sexton's wife, has been dying of the same cough for nine hundred years. Once the Prophet has been met and you have been walled in twice, she takes every other knock and tells a five-chapter arc, one chapter per visit. Each chapter asks something small (silence, buying nothing, a Mortification, nine Tolls on the beat). Keeping it brings a boon; failing it brings only what she says. Either way the story moves on, and refusing her just brings the same chapter back. What she said is kept in the Ledger, under the Account. She has her own portrait and voice, and a cough when the door opens.
+   - **Refusing the Prophet** three times in a row leaves a curse (All ×0.8 for 15m) and he returns sooner. The dialog warns before the third.
+   - **The Deep** opens under each finished branch of the Lattice: Flesh Upon Flesh (All ×1.15 a rank), The Bell Sinks Deeper (Tolls ×1.25) and Bone Upon Bone (Marrow from Immurement ×1.05). A rank costs 300 Marrow, then 5× more each time. The self-test plays a veteran with and without it: runs get shorter, but each still takes longer than the one before.
 5. **v0.5 Mortification** (shipped early, on 2026-10-01). Unlocked by the first Immurement, it trades production time for Wounds: 11 wounds across 3 depths, ranks I to V, 3 open slots. The Sexton view shows the animated 16-bit sprite.
 6. **v0.6 Ordeals.** Six challenge runs that each impose a harsh rule: no Tolling, costs ×2, or only three Rites. Each one you complete grants a unique permanent modifier.
 7. **v0.7 The Unnaming (layer 2).** Burn your name from the rolls. This resets Marrow, the Lattice and Vows in exchange for **Ashen Names**, which unlock new Rites beyond the Hollow Bishop (still to be designed) and per-Rite multipliers. It also introduces **Creeds**, a per-run choice between Keeping (idle-leaning) and Letting (active-leaning). The `Num` type swaps to mantissa/exponent here.

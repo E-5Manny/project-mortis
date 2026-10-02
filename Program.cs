@@ -25,6 +25,7 @@ static class App
     class Dialog
     {
         public string Speaker = "";
+        public string? By;  // as Bidding.By: picks the portrait and the voice
         public List<string> Pages = new();
         public int Page;
         public float Typed, Age;
@@ -128,8 +129,9 @@ static class App
         // keyed by save folder: one copy per save (test runs with MORTIS_SAVE_DIR don't collide with the real game)
         string key = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(SaveFile.Dir.ToLowerInvariant())))[..12];
         using var single = new Mutex(true, "Mortis.SingleInstance." + key, out bool first);
-        using var reveal = new EventWaitHandle(false, EventResetMode.AutoReset, "Mortis.Reveal." + key);
-        if (!first) { reveal.Set(); return; }
+        // named events are Windows-only: elsewhere a second launch just exits
+        using var reveal = OperatingSystem.IsWindows() ? new EventWaitHandle(false, EventResetMode.AutoReset, "Mortis.Reveal." + key) : null;
+        if (!first) { reveal?.Set(); return; }
 
         Load();
         SetTraceLogLevel(TraceLogLevel.Warning);
@@ -156,7 +158,7 @@ static class App
             if (dt > 60) ShowAway(G.ApplyAway(dt)); else G.Tick(dt);
 
             if (Panic.Toggled()) SetHidden(!Hidden);
-            if (reveal.WaitOne(0)) SetHidden(false);
+            if (reveal?.WaitOne(0) == true) SetHidden(false);
             SinceSave += dt;
             if (SinceSave >= 30) Save();
 
@@ -236,6 +238,7 @@ static class App
         UpdateWhisper(dt);
         FlashT += dt; ShakeT += dt; EmptyT += dt;
 
+        G.TickBidding(dt);  // before the Admissions below, so a Bidding's last words outlast the Admission it earns
         if (G.NewWound is { } nw) { RevealWound = nw; G.NewWound = null; AddLog("A wound opens: " + Data.Wound(nw).Name); Audio.Play("wound", 0.9f); Save(); }
         while (G.NewAdmissions.TryDequeue(out var adm))
         {
@@ -249,13 +252,12 @@ static class App
         bool overlay = Away != null || RevealWound != null || SeqT >= 0 || Talk != null;
         UpdateOmen(dt, overlay);
         UpdateVisit(dt, overlay);
-        G.TickBidding(dt);
         if (G.BiddingOutcome is { } outcome && Data.Bid(outcome.id) is { } done)
         {
             G.BiddingOutcome = null;
             AddLog(outcome.kept ? $"Bidding kept: {done.Title}" : $"Bidding failed: {done.Title}");
             Override = outcome.kept ? done.Success : done.Fail;
-            OverrideT = 8;
+            OverrideT = Math.Max(8, Override.Length / 15f);
             Audio.Play(outcome.kept ? "chime" : "thunk", 0.7f, outcome.kept ? 0.75f : 1f);
             Save();
         }
@@ -623,7 +625,16 @@ static class App
             return;
         }
         float textW = G.Bidding != null ? 330 : 490;
-        Text(Fit(s, 13, textW), 12, 495, 13, Override == null && HoverText != null ? Bone : BoneDim);
+        if (Override != null && Width(s, 13) > textW)
+        {
+            // A long line (an Admission, a Bidding's outcome) wraps onto two, and takes the whole bar when no Bidding needs the right side.
+            float w = G.Bidding != null ? textW : 606;
+            var lines = Wrap(s, 13, w);
+            Text(lines[0], 12, lines.Count > 1 ? 487 : 495, 13, BoneDim);
+            if (lines.Count > 1) Text(Fit(string.Join(' ', lines.Skip(1)), 13, w), 12, 502, 13, BoneDim);
+            if (G.Bidding == null) return;
+        }
+        else Text(Fit(s, 13, textW), 12, 495, 13, Override == null && HoverText != null ? Bone : BoneDim);
 
         if (G.Bidding != null && Data.Bid(G.Bidding.Id) is { } bid)
         {
@@ -757,14 +768,18 @@ static class App
 
     static void ImmureTab()
     {
-        string[] subs = ["Immurement", "The Lattice", "Vows"];
+        // The Deep stays out of sight until a branch of the Lattice is finished.
+        string[] subs = Data.Deep.Any(G.DeepOpen) ? ["Immurement", "The Lattice", "Vows", "The Deep"] : ["Immurement", "The Lattice", "Vows"];
+        if (ImmureSub >= subs.Length) ImmureSub = 0;
+        float w = 396f / subs.Length;
         for (int i = 0; i < subs.Length; i++)
-            if (TextButton(new Rectangle(234 + i * 132, 100, 130, 20), subs[i], 13, true, ImmureSub == i)) ImmureSub = i;
+            if (TextButton(new Rectangle(234 + i * w, 100, w - 2, 20), subs[i], 13, true, ImmureSub == i)) ImmureSub = i;
         switch (ImmureSub)
         {
             case 0: ImmureView(); break;
             case 1: LatticeView(); break;
             case 2: VowsView(); break;
+            case 3: DeepView(); break;
         }
     }
 
@@ -853,6 +868,37 @@ static class App
                 if (Hover(new Rectangle(452, r.Y + 4, 88, 18)))
                     HoverText = $"Walls you in once the Marrow waiting is {G.AutoImmureAt:0.#}× what you already have.";
             }
+        }
+    }
+
+    // The Deep: one repeatable node under each finished branch.
+    static void DeepView()
+    {
+        TextRight($"Marrow to spend: {G.MarrowFree()} of {G.MarrowEarned}", 618, 126, 13, Gold);
+        Text("Under the Lattice. It has no floor.", 242, 126, 13, BoneDim);
+        for (int i = 0; i < Data.Deep.Length; i++)
+        {
+            var d = Data.Deep[i];
+            var r = new Rectangle(234, 146 + 63 * i, 392, 60);
+            bool open = G.DeepOpen(d), can = G.CanDeepen(d);
+            int rank = G.DeepRank(d.Id), cost = G.DeepCost(d);
+            Frame(r, open ? Bg2 : Bg1);
+            Title(d.Name, 242, r.Y + 2, 18, open ? Bone : BoneDim);
+            if (!open)
+            {
+                Text($"Sealed until the {Data.Branches[d.Branch]} branch is whole.", 242, r.Y + 26, 13, ColorAlpha(BoneDim, 0.6f));
+                continue;
+            }
+            Text($"{d.Effect} for each rank", 242, r.Y + 26, 13, BoneDim);
+            Text(rank == 0 ? "Not yet dug" : $"Rank {rank} · {Mult(Math.Pow(d.Mult, rank))} in all", 242, r.Y + 42, 13, rank == 0 ? BoneDim : Bone);
+            var b = new Rectangle(486, r.Y + 6, 130, 22);
+            if (TextButton(b, $"Deepen: {cost:#,0}", 13, can) && G.Deepen(d))
+            {
+                AddLog($"Deepened: {d.Name} {Roman(rank + 1)}".TrimEnd());
+                Audio.Play("chime", 0.7f, 0.6f);
+                Save();
+            }
+            if (Hover(r)) HoverText = $"{d.Name}: {d.Effect} for each rank. The next costs {cost:#,0} Marrow, and each costs {Game.DeepGrowth:0}× the last.";
         }
     }
 
@@ -958,6 +1004,14 @@ static class App
             lines.AddRange(Wrap(Data.Stanzas[i - 1], 13, 366).Select(l => (l, false)));
         }
         if (G.Immurements > Data.Stanzas.Length) lines.Add((Data.AccountComplete, true));
+        var chapters = Data.Chapters();
+        int told = Math.Min(G.WifeKept.Count, chapters.Length);
+        if (told > 0) { lines.Add(("", false)); lines.Add(($"What {Data.Wife?.Name} Said", true)); }
+        for (int i = 0; i < told; i++)
+        {
+            lines.Add((chapters[i].Title, true));
+            lines.AddRange(Wrap(G.WifeKept[i] ? chapters[i].Success : chapters[i].Fail, 13, 366).Select(l => (l, false)));
+        }
 
         float contentH = lines.Count * 15 + 8, viewH = 352;
         AccountScroll = Math.Clamp(AccountScroll - GetMouseWheelMove() * 30, 0, Math.Max(0, contentH - viewH));
@@ -993,7 +1047,7 @@ static class App
 
     static string TargetName(string t) => t switch
     {
-        "all" => "All production", "toll" => "Tolls", "costs" => "Rite prices", "tollRegen" => "Toll rest time",
+        "all" => "All production", "toll" => "Tolls", "costs" => "Rite prices", "tollRegen" => "Toll rest time", "marrow" => "Marrow from Immurement",
         _ => Data.Rites.FirstOrDefault(r => r.Id == t)?.Name + "s",
     };
     static string ModText(Mod m) => $"{TargetName(m.Target)} ×{m.Mult:0.##}" + (m.Seconds > 0 ? $" for {Duration(m.Seconds)}" : "");
@@ -1006,9 +1060,9 @@ static class App
             KnockIn -= dt;
             if (KnockIn <= 0 && !overlay) { Audio.Play("handbell", 0.6f); KnockIn = 60; }
             if (VisitWait < 600) return;
-            VisitWait = -1;  // he gives up waiting
+            VisitWait = -1;  // whoever it was gives up waiting
             AddLog("The knocking stopped.");
-            if (Data.Prophet != null) { Override = Data.Prophet.Leaves; OverrideT = 7; }
+            if (AtDoor != null && Data.Who(AtDoor) is { } gone) { Override = gone.Leaves; OverrideT = 7; }
             return;
         }
         if (!G.Settings.Visitors || overlay || !G.CanBeVisited()) return;
@@ -1020,44 +1074,60 @@ static class App
         AtDoor = G.NextBidding();
     }
 
-    // A visitor waiting at the door: his face, a pulsing frame, and how long he will still wait. Click to answer.
+    // A visitor waiting at the door: their face, a pulsing frame, and how long they will still wait. Click to answer.
     static void VisitorCard()
     {
+        bool wife = AtDoor?.By == "wife";
         // over the candles and pool by the heart; over the sprite in the Sexton view, clear of its controls
         var r = new Rectangle(8, SextonView ? 80 : 334, 214, 100);
         float pulse = 0.5f + 0.5f * MathF.Sin(T * 3);
         DrawRectangleRec(new Rectangle(r.X - 3, r.Y - 3, r.Width + 6, r.Height + 6), ColorAlpha(Gold, 0.10f + 0.12f * pulse));
         if (Button(r, true, Bg1)) { OpenVisit(); return; }
         DrawRectangleLinesEx(r, 2, Lerp(Gold, GoldBright, pulse));
-        Prophet.DrawFace(new Rectangle(r.X + 8, r.Y + 8, 72, 84));
+        var face = new Rectangle(r.X + 8, r.Y + 8, 72, 84);
+        if (wife) Wife.DrawFace(face); else Prophet.DrawFace(face);
         Title("At the door", r.X + 88, r.Y + 6, 22, Lerp(Gold, GoldBright, pulse));
-        Text(Data.Prophet?.Name ?? "A visitor", r.X + 88, r.Y + 36, 13, Bone);
+        // a stranger until she has said her name
+        Text(AtDoor == null ? "A visitor" : wife && !G.MetWife ? "A woman, coughing" : Data.Who(AtDoor)?.Name ?? "A visitor", r.X + 88, r.Y + 36, 13, Bone);
         Text("click to answer", r.X + 88, r.Y + 56, 13, ColorAlpha(BoneDim, 0.6f + 0.4f * pulse));
         var bar = new Rectangle(r.X + 88, r.Y + 80, 112, 6);
         Frame(bar, Bg0);
         DrawRectangle((int)bar.X + 1, (int)bar.Y + 1, (int)((bar.Width - 2) * Math.Max(0, 1 - VisitWait / 600)), 4, ColorAlpha(Gold, 0.8f));
-        if (Hover(r)) HoverText = $"He will wait {Duration(Math.Max(0, 600 - VisitWait))} more. Answer the door.";
+        if (Hover(r)) HoverText = $"{(wife ? "She" : "He")} will wait {Duration(Math.Max(0, 600 - VisitWait))} more. Answer the door.";
     }
 
     static void OpenVisit()
     {
-        if (AtDoor is not { } bid || Data.Prophet is not { } who) return;
+        if (AtDoor is not { } bid || Data.Who(bid) is not { } who) return;
+        bool wife = bid.By == "wife";
         VisitWait = -1;
         var pages = new List<string>();
-        if (!G.MetProphet) pages.AddRange(who.Greeting);
+        if (!(wife ? G.MetWife : G.MetProphet)) pages.AddRange(who.Greeting);
         pages.AddRange(bid.Pages);
         pages.Add(bid.Ask);
         pages.Add($"While you bear it: {(bid.Burden is { } b ? ModText(b) : "nothing")}. If you keep it: {ModText(bid.Boon)}."
-                  + (bid.Curse is { } c ? $" If you fail: {ModText(c)}." : "") + $" You have {Duration(bid.Objective.Seconds)}.");
-        G.MetProphet = true;
+                  + (bid.Curse is { } c ? $" If you fail: {ModText(c)}." : "") + $" You have {Duration(bid.Objective.Seconds)}."
+                  + (!wife && G.RefusedInRow == 2 && who.Spurned is { } warn ? $" Twice now you have refused him. A third time leaves his curse: {ModText(warn)}." : ""));
+        if (wife) { G.MetWife = true; Audio.Play("cough", 0.6f); } else G.MetProphet = true;
         Talk = new Dialog
         {
-            Speaker = who.Name, Pages = pages, Choices = ["Accept", "Refuse"],
+            Speaker = who.Name, By = bid.By, Pages = pages, Choices = ["Accept", "Refuse"],
             OnChoice = i =>
             {
+                var reply = new List<string> { i == 0 ? bid.Accept : bid.Refuse };
                 if (i == 0) { G.Accept(bid); AddLog("Bidding accepted: " + bid.Title); Audio.Play("chime", 0.6f, 0.7f); }
-                else { G.Refuse(bid); AddLog("The Prophet was turned away."); Audio.Play("thunk", 0.5f); }
-                Talk = new Dialog { Speaker = who.Name, Pages = [i == 0 ? bid.Accept : bid.Refuse], Age = 1 };
+                else
+                {
+                    if (G.Refuse(bid) && who.Spurned is { } curse)
+                    {
+                        reply.Add($"{who.SpurnedLine} His curse: {ModText(curse)}.");
+                        VisitIn = 300 + Random.Shared.Next(300);  // he comes back sooner
+                        AddLog("Spurned. The Prophet leaves his curse.");
+                    }
+                    else AddLog(wife ? $"{who.Name} was sent away." : "The Prophet was turned away.");
+                    Audio.Play("thunk", 0.5f);
+                }
+                Talk = new Dialog { Speaker = who.Name, By = bid.By, Pages = reply, Age = 1 };
                 Save();
             },
         };
@@ -1071,14 +1141,15 @@ static class App
         int before = (int)d.Typed;
         d.Typed = Math.Min(page.Length, d.Typed + dt * 45);
         for (int i = before; i < (int)d.Typed; i++)
-            if (i % 3 == 0 && char.IsLetter(page[i])) Audio.Play("murmur", 0.2f, 0.8f + 0.15f * Random.Shared.NextSingle());
+            if (i % 3 == 0 && char.IsLetter(page[i])) Audio.Play(d.By == "wife" ? "breath" : "murmur", 0.2f, 0.8f + 0.15f * Random.Shared.NextSingle());
         bool typing = d.Typed < page.Length;
 
         DrawRectangle(0, 0, 630, 520, ColorAlpha(Bg0, 0.8f));
         float slide = 1 - MathF.Pow(1 - Math.Min(1, d.Age / 0.35f), 3);
         int bob = MathF.Sin(T * 1.4f) > 0 ? 3 : 0;  // breathing, in whole art pixels
         bool mouth = typing && (int)(d.Typed / 2) % 2 == 0 && char.IsLetter(page[Math.Min(page.Length - 1, (int)d.Typed)]);
-        Prophet.Draw(new Vector2(-200 + 230 * slide, 72 + bob), 3, mouth, ColorAlpha(Color.White, slide));
+        var at = new Vector2(-200 + 230 * slide, 72 + bob);
+        if (d.By == "wife") Wife.Draw(at, 3, mouth, ColorAlpha(Color.White, slide)); else Prophet.Draw(at, 3, mouth, ColorAlpha(Color.White, slide));
 
         var box = new Rectangle(16, 340, 598, 164);
         Frame(new Rectangle(28, 310, 260, 30), Bg1);

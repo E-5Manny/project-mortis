@@ -172,7 +172,71 @@ static class SelfTest
         bg.Dolor.Run = bg.Dolor.AllTime = Game.Gate;
         bg.Immure();
         Check(bg.Bidding == null, "Immurement ends a bidding");
-        Data.Biddings = realBids;
+
+        // Ysmay: every other knock once the Prophet is met and two walls are behind you; her chapters come in order
+        var realWife = Data.Wife; var realProphet = Data.Prophet;
+        Bidding Chapter(string id) => Make(id, "silence", null, 0, 60) with { By = "wife", Burden = null, Curse = null };
+        Data.Biddings = [Make("t_toll", "toll", null, 3, 300), Chapter("w1"), Chapter("w2")];
+        Data.Wife = new Visitor("W", "", [], "");
+        Data.Prophet = new Visitor("P", "", [], "", new Mod("all", 0.8, 900), "");
+        var wf = new Game { Immurements = 2 };
+        Check(wf.NextBidding().By == null, "Ysmay does not knock before the Prophet has");
+        wf.MetProphet = true;
+        var w1 = wf.NextBidding();
+        Check(w1.Id == "w1", "Ysmay's first chapter comes first");
+        Check(!wf.Refuse(w1) && wf.WifeKept.Count == 0 && wf.RefusedInRow == 0 && wf.Stats.BiddingsRefused == 0 && wf.Effects.Count == 0,
+              "refusing Ysmay costs nothing and keeps her chapter");
+        Check(wf.NextBidding().By == null, "the Prophet takes the knock after hers");
+        wf.LastBidding = "t_toll";
+        Check(wf.NextBidding().Id == "w1", "a refused chapter is told again");
+        wf.Accept(w1);
+        wf.TickBidding(61);
+        Check(wf.BiddingOutcome == ("w1", true) && wf.WifeKept.SequenceEqual([true]) && wf.Stats.BiddingsDone == 0, "a kept chapter moves her story on, outside the Prophet's count");
+        wf.LastBidding = "t_toll";
+        var w2 = wf.NextBidding();
+        wf.Accept(w2);
+        wf.Toll(false);
+        int effects = wf.Effects.Count;
+        wf.TickBidding(0.1);
+        Check(w2.Id == "w2" && wf.BiddingOutcome == ("w2", false) && wf.WifeKept.SequenceEqual([true, false]) && wf.Effects.Count == effects && wf.Stats.BiddingsFailed == 0,
+              "a failed chapter moves on too, without a curse");
+        wf.LastBidding = "t_toll";
+        Check(wf.WifeDone() && wf.NextBidding().By == null, "her story told, only the Prophet knocks");
+
+        // the Prophet: the third refusal in a row leaves his curse; accepting starts the count again
+        var rf = new Game { Immurements = 1 };
+        var asked = Data.Bid("t_toll")!;
+        Check(!rf.Refuse(asked) && !rf.Refuse(asked) && rf.RefusedInRow == 2 && rf.Effects.Count == 0, "two refusals are free");
+        rf.Accept(asked);
+        rf.Bidding = null;
+        Check(rf.RefusedInRow == 0 && !rf.Refuse(asked) && !rf.Refuse(asked), "accepting resets the refusals");
+        Check(rf.Refuse(asked) && Near(rf.MultFor("all"), 0.8) && rf.RefusedInRow == 0 && rf.Stats.BiddingsRefused == 5, "the third refusal in a row is cursed");
+        rf.Tick(901);
+        Check(Near(rf.MultFor("all"), 1), "the Prophet's curse runs out");
+        Data.Biddings = realBids; Data.Wife = realWife; Data.Prophet = realProphet;
+        Check(Data.Chapters().All(c => c.Curse == null), "Ysmay's chapters carry no curse");
+
+        // the Deep: sealed until its branch is whole; each rank costs 5× the last and compounds
+        var dp = new Game { MarrowEarned = 10000 };
+        DeepNode dFlesh = Data.DeepNode("deep_flesh"), dBell = Data.DeepNode("deep_bell"), dBone = Data.DeepNode("deep_bone");
+        Check(!dp.DeepOpen(dFlesh) && !dp.Deepen(dFlesh) && dp.Deep.Count == 0, "the Deep is sealed until its branch is whole");
+        dp.Lattice.Add("flesh_remembers");
+        Check(dp.DeepOpen(dFlesh) && !dp.DeepOpen(dBell) && !dp.DeepOpen(dBone), "one whole branch opens only its own Deep node");
+        foreach (var n in Data.Lattice) dp.Lattice.Add(n.Id);
+        double dAll = dp.MultFor("all"), dToll = dp.MultFor("toll"), dBonus = dp.MarrowMult(dp.MarrowEarned);
+        Check(dp.DeepCost(dFlesh) == 300 && dp.Deepen(dFlesh) && dp.MarrowFree() == 9700 && dp.DeepCost(dFlesh) == 1500, "each Deep rank costs 5× the last");
+        Check(dp.Deepen(dFlesh) && dp.MarrowFree() == 8200 && Near(dp.MultFor("all"), dAll * 1.15 * 1.15), "Deep ranks compound");
+        Check(dp.Deepen(dBell) && Near(dp.MultFor("toll"), dToll * 1.25), "the Bell's Deep: Tolls ×1.25");
+        Check(dp.Deepen(dBone) && Near(dp.MarrowGain(), 1.25 * 1.05) && Game.TotalFor(4 * Game.Gate, dp.MarrowGain()) == 26, "the Bone's Deep: Marrow ×1.05");
+        Check(Near(dp.MarrowMult(dp.MarrowEarned), dBonus), "Marrow sunk in the Deep still counts");
+        dp.MarrowSpent = dp.MarrowEarned - 1499;
+        Check(!dp.Deepen(dBell) && dp.DeepRank("deep_bell") == 1, "no Deep rank without the Marrow for it");
+        dp.MetWife = true; dp.WifeKept = [true, false]; dp.RefusedInRow = 2;
+        var dpSaved = SaveFile.Deserialize<Game>(SaveFile.Serialize(dp))!;
+        Check(dpSaved.DeepRank("deep_flesh") == 2 && dpSaved.MetWife && dpSaved.WifeKept.SequenceEqual([true, false]) && dpSaved.RefusedInRow == 2, "the Deep and Ysmay survive save");
+        dp.Dolor.Run = dp.Dolor.AllTime = 1e3 * Game.Gate;
+        dp.Immure();
+        Check(dp.DeepRank("deep_flesh") == 2 && dp.WifeKept.Count == 2, "the Deep and Ysmay's chapters survive Immurement");
         foreach (var b in Data.Biddings)  // the shipped content only uses what the engine understands
             Check(new[] { "toll", "beat", "buy", "gather", "abstain", "silence", "mortify" }.Contains(b.Objective.Type)
                   && (b.Objective.Type != "buy" || Data.Rites.Any(r => r.Id == b.Objective.Target))
@@ -197,22 +261,62 @@ static class SelfTest
         Console.WriteLine($"greedy run 2: {Ui.Duration(run2)} back to the gate ({(1 - run2 / run1) * 100:0}% faster)");
         Check(run2 < run1 * 0.7, "run 2 at least 30% faster");
 
+        // a veteran (1300 Marrow, the whole Lattice): the Deep makes runs shorter, but each still takes longer than the last
+        var bare = VeteranRuns(Veteran(), false, "veteran, no Deep");
+        var sunk = VeteranRuns(Veteran(), true, "veteran, the Deep");
+        for (int i = 0; i < sunk.Length; i++)
+        {
+            Check(sunk[i] < bare[i] && sunk[i] > bare[i] / 3, $"veteran run {i + 1}: the Deep helps, but no more than 3× ({Ui.Duration(sunk[i])} against {Ui.Duration(bare[i])})");
+            if (i > 0) Check(sunk[i] > sunk[i - 1], $"veteran run {i + 1} with the Deep is longer than the one before");
+        }
+
+        // MORTIS_SIM_SAVE=<save.json>: greedy runs from that save's persistent state, each to the Ready point (pending ≥ earned).
+        if (Environment.GetEnvironmentVariable("MORTIS_SIM_SAVE") is { } simSave)
+        {
+            var v = SaveFile.Deserialize<Game>(File.ReadAllText(simSave))!;
+            v.Migrate();
+            v.ResetRun();
+            VeteranRuns(v, true, "saved veteran");
+        }
+
         Console.WriteLine(_fails == 0 ? "selftest OK" : $"{_fails} failure(s)");
         return _fails;
+    }
+
+    static Game Veteran()
+    {
+        var v = new Game { MarrowEarned = 1300, Immurements = 5 };
+        foreach (var n in Data.Lattice) { v.Lattice.Add(n.Id); v.MarrowSpent += n.Cost; }
+        v.Dolor.AllTime = Game.LifetimeFor(v.MarrowEarned, v.MarrowGain());
+        v.ResetRun();
+        return v;
+    }
+
+    // Four greedy runs, each to the Ready point (pending ≥ earned). With `deep`, all free Marrow goes into the Deep first, cheapest rank first.
+    static double[] VeteranRuns(Game v, bool deep, string label)
+    {
+        var times = new double[4];
+        for (int i = 0; i < times.Length; i++)
+        {
+            while (deep && Data.Deep.Where(v.CanDeepen).MinBy(v.DeepCost) is { } d) v.Deepen(d);
+            times[i] = Greedy(v, out v, ready: true);
+        }
+        Console.WriteLine($"{label}: {string.Join(", ", times.Select(Ui.Duration))} to Ready ({v.MarrowEarned} Marrow, Deep {string.Join("/", Data.Deep.Select(d => v.DeepRank(d.Id)))})");
+        return times;
     }
 
     // Buys whatever pays back fastest (waiting included), tolls every 5s. Returns seconds to the first Immurement.
     // MORTIS_SIM_TIMELINE=1 prints when each Rite and Sacrament first arrives (for balancing).
     static readonly bool Timeline = Environment.GetEnvironmentVariable("MORTIS_SIM_TIMELINE") == "1";
-    static double Greedy(Game g, out Game result, double stopAtRun = 0)
+    static double Greedy(Game g, out Game result, double stopAtRun = 0, bool ready = false)
     {
         const double dt = 0.1;
         double t = 0, sinceToll = 0;
         var seen = new HashSet<string>();
         void Note(string what) { if (Timeline && seen.Add(what)) Console.WriteLine($"  {Ui.Duration(t),9}  {what}  (dps {Ui.Num(g.Dps())})"); }
-        while (t < 10 * 3600)
+        while (t < 20 * 3600)
         {
-            if (stopAtRun > 0 ? g.Dolor.Run >= stopAtRun : g.CanImmure()) break;
+            if (stopAtRun > 0 ? g.Dolor.Run >= stopAtRun : ready ? g.Ready() : g.CanImmure()) break;
             g.Tick(dt); t += dt; sinceToll += dt;
             if (sinceToll >= 5 && g.Tolls > 0) { g.Toll(false); sinceToll = 0; }
 
