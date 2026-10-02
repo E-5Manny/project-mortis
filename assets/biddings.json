@@ -7,7 +7,23 @@
       "Knock. Knock. You did not answer the first time either. Nine hundred years, Sexton, and still you open the door late.",
       "They called me Haddeth, before I gave my eyes away. I see you well enough. I see you holding the rope. I bring Biddings."
     ],
-    "leaves": "The door stays shut. Good. I will knock again when you are worse. It will not be long."
+    "leaves": "The door stays shut. Good. I will knock again when you are worse. It will not be long.",
+    "spurned": {
+      "target": "all",
+      "mult": 0.8,
+      "seconds": 900
+    },
+    "spurnedLine": "Three times bolted. Very well. I have spat on your step, and the faithful will tread it in. Your Dolor runs thin a while. I will come back sooner. You need watching."
+  },
+  {
+    "id": "_wife",
+    "name": "Ysmay",
+    "personal": "your wife",
+    "greeting": [
+      "It's me. Don't pretend you don't know the cough. You used to say you could find me in any crowd by it.",
+      "Ysmay. Your wife, if the word still holds after nine hundred years. The town forgets you every time they wall you in. I don't. I've tried."
+    ],
+    "leaves": "The knocking stops. Down the stair, a woman coughs, and keeps walking."
   },
   {
     "id": "counted_rope",
@@ -342,5 +358,145 @@
     "refuse": "Of course. You have always preferred to arrange it.",
     "success": "They heard every stroke. Tomorrow they will offer more, and think it was their own idea.",
     "fail": "No sound from the tower. They have stopped wondering about you. That is worse."
+  },
+  {
+    "id": "wife_quiet",
+    "title": "A Cough at the Door",
+    "pages": [
+      "I was dying the night you rang it. Do you remember? The physician gave me a week. I have been finishing that week for nine hundred years.",
+      "Every time you pull the rope, my chest pulls with it. Every stroke, I start dying again from the beginning.",
+      "So I want five minutes. Leave the rope alone and let me sit on your step. I want to hear whether my chest goes quiet when the bell does."
+    ],
+    "ask": "Don't Toll the bell for 5 minutes while she sits on the step.",
+    "objective": {
+      "type": "silence",
+      "target": null,
+      "amount": 0,
+      "seconds": 300
+    },
+    "burden": null,
+    "boon": {
+      "target": "toll",
+      "mult": 3,
+      "seconds": 1200
+    },
+    "curse": null,
+    "accept": "Thank you. Sit down, then. No, not that close.",
+    "refuse": "Ring it, then. I'll come back. Coming back is the only thing I'm still good at.",
+    "success": "Five minutes. My chest didn't stop. It only went quiet, like it was listening for you. When you ring again, ring hard. I'd rather it was quick.",
+    "fail": "You rang. I coughed. Of course I did. Never mind. I'll come again.",
+    "by": "wife"
+  },
+  {
+    "id": "wife_wick",
+    "title": "My Sister's Wick",
+    "pages": [
+      "My sister Elsbet is a candle now. Third from the left in the Tallow Hall. She asked to be remembered, and you made her into light. I was standing behind you.",
+      "I go and sit with her. The wick spits when I talk about you. I think that's her laughing. I hope that's her laughing.",
+      "Buy nothing while I'm here. No candles, no kneelers, nothing. Eight minutes of nobody new on the shelf. Then do what you like. You will."
+    ],
+    "ask": "Buy nothing for 8 minutes: no Rites, no Sacraments, and the Deacons buy nothing either.",
+    "objective": {
+      "type": "abstain",
+      "target": null,
+      "amount": 0,
+      "seconds": 480
+    },
+    "burden": null,
+    "boon": {
+      "target": "tallow",
+      "mult": 4,
+      "seconds": 1800
+    },
+    "curse": null,
+    "accept": "Good. Hands in your lap. I'll tell you what she said, the last time she could still talk.",
+    "refuse": "No. Of course not. There's always one more candle. I'll come back when you've lit it.",
+    "success": "Eight minutes, and nobody new. When I'm gone you'll buy twice as many. I know you. The candles will burn brighter for a while. Elsbet's too.",
+    "fail": "You bought something. I heard the coins. Elsbet's wick went out for a moment, then lit again. It always lights again.",
+    "by": "wife"
+  },
+  {
+    "id": "wife_lash",
+    "title": "Where I Can Hear",
+    "pages": [
+      "They tell me you scourge yourself now. Up in the tower, where nobody sees. Very private. Very holy.",
+      "I have bled every day for nine hundred years, Sexton, and not once did I get to choose when.",
+      "Do it now, while I sit downstairs. Fifteen minutes or longer. I want to hear it. I want to know it costs you something."
+    ],
+    "ask": "Finish a Mortification of 15m or longer within 1 hour.",
+    "objective": {
+      "type": "mortify",
+      "target": null,
+      "amount": 0,
+      "seconds": 3600
+    },
+    "burden": null,
+    "boon": {
+      "target": "all",
+      "mult": 1.5,
+      "seconds": 1800
+    },
+    "curse": null,
+    "accept": "I'll count the strokes. I'm good at counting. I've had the practice.",
+    "refuse": "No. It's only ever other people, isn't it. I'll come back. I'll bring a stool.",
+    "success": "I heard every one. It didn't help. I thought it would. I wrapped the worst of them. Don't tell anyone I was kind to you.",
+    "fail": "I listened for an hour and heard only the bell. Well. I knew what I married.",
+    "by": "wife"
+  },
+  {
+    "id": "wife_breaths",
+    "title": "Nine Breaths",
+    "pages": [
+      "My breath catches with His heart. Have you noticed? Every beat, a little hitch in my chest, like a stair missed in the dark.",
+      "When you ring in time with Him, the hitch goes smooth. For a moment I breathe the way I did when we were young and stupid.",
+      "Nine times, on the beat. One for each hundred years. Then I'll go."
+    ],
+    "ask": "Toll on the heartbeat 9 times within 10 minutes.",
+    "objective": {
+      "type": "beat",
+      "target": null,
+      "amount": 9,
+      "seconds": 600
+    },
+    "burden": null,
+    "boon": {
+      "target": "tollRegen",
+      "mult": 0.5,
+      "seconds": 1800
+    },
+    "curse": null,
+    "accept": "Go on. I'll breathe. You ring.",
+    "refuse": "Not even nine. All right. I'll keep the hitch. It's company.",
+    "success": "Nine. I breathed, Sexton. Nine whole breaths. Then it caught again. Don't look at me like that. It was worth it.",
+    "fail": "You missed. You always rang a little early. You never could wait for anything.",
+    "by": "wife"
+  },
+  {
+    "id": "wife_street",
+    "title": "The End of the Street",
+    "pages": [
+      "This is the last time I'll knock. I've decided. I decided at the bottom of your stair, and then again at the top.",
+      "I'm going to walk to the end of the street, where the town stops and His ribs come down to the ground. I'll wait there.",
+      "Don't ring while I walk. Fifteen minutes. If He dies on the way, let Him. If He doesn't, I'll wait at the end of everything for you to finish it."
+    ],
+    "ask": "Don't Toll the bell for 15 minutes while she walks away.",
+    "objective": {
+      "type": "silence",
+      "target": null,
+      "amount": 0,
+      "seconds": 900
+    },
+    "burden": null,
+    "boon": {
+      "target": "all",
+      "mult": 2,
+      "seconds": 7200
+    },
+    "curse": null,
+    "accept": "Thank you. Don't come to the window. I'd only turn around.",
+    "refuse": "Not yet, then. I'll knock again. It seems I can't stop either.",
+    "success": "Fifteen minutes. He kept beating. You kept Him. I'm at the end of the street now. When you're ready to let Him go, I'll hear the bell stop.",
+    "fail": "You rang. I heard it from the end of the street. I'm not coming back. I'll wait anyway. That's what this place has made of us.",
+    "by": "wife"
   }
 ]

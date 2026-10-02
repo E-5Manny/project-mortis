@@ -23,6 +23,7 @@ static class Audio
         ("scream_far_1", () => Scream(1, true), 1), ("scream_far_2", () => Scream(2, true), 1),
         ("scream_far_3", () => Scream(3, true), 1), ("scream_crowd", Crowd, 1), ("scream_near", () => Scream(1, false), 1),
         ("brick", Brick, 3), ("wound", WoundSwell, 1), ("handbell", Handbell, 1), ("murmur", Murmur, 3),
+        ("breath", Breath, 3), ("cough", Cough, 1),
     ];
     static readonly (string name, Func<float[]> gen)[] Beds = [("drone", Drone), ("candles", Candles)];
 
@@ -543,6 +544,52 @@ static class Audio
         var f = Formants(o, [(520, 4, 1), (1100, 6, 0.5)]);
         Envelope(f, t => Math.Sin(Math.PI * t / 0.09));
         return Normalize(Reverb(Lowpass(f, 2000), 0.2, 0.75, 0.3), 0.5);
+    }
+
+    // One syllable of a tired woman's voice, for dialog text as it types: more air than tone, a rasp in it.
+    // Flat pitch and a quick Hann envelope so it reads as speech; a slow swell or a glide would read as a sigh.
+    static float[] Breath()
+    {
+        var r = new Random(72);
+        double sec = 0.1;
+        var o = Voice(sec, t => 186 - 40 * t, 1.1, r);
+        double rasp = 0;
+        for (int i = 0; i < o.Length; i++)
+        {
+            rasp += 0.02 * (Noise(r) - rasp);                         // slow shimmer: a worn, uneven voice
+            o[i] *= (float)(0.7 + 2.5 * rasp);
+        }
+        var f = Formants(o, [(780, 5, 1), (1600, 7, 0.45), (2700, 9, 0.18)]);
+        Envelope(f, t => Math.Pow(Math.Sin(Math.PI * Math.Min(t, sec) / sec), 2));
+        return Normalize(Reverb(Lowpass(f, 2400), 0.15, 0.72, 0.25), 0.45);
+    }
+
+    // Ysmay's cough: two dry hacks and a weaker third, the cough of a woman nine centuries consumptive.
+    // Each hack is the glottis snapping open (a few pressed pulses), a blast of band-passed air and a thump of chest.
+    static float[] Cough()
+    {
+        var r = new Random(73);
+        var o = Buf(0.85);
+        foreach (var (at, gain, f) in new[] { (0.01, 1.0, 1250.0), (0.27, 0.85, 1100.0), (0.51, 0.55, 1000.0) })
+        {
+            var hack = Buf(0.22);
+            for (int i = 0; i < hack.Length; i++)
+            {
+                double t = T(i);
+                hack[i] = (float)(Noise(r) * (1 - Math.Exp(-t * 900)) * Math.Exp(-t * 26));
+            }
+            var air = Add(Bandpass(hack, f, 1.3), Bandpass(hack, 2600, 2.5), 0, 0.35);
+            var edge = Buf(0.04);                                     // the glottal edge: a few hard pulses at onset
+            for (double t0 = 0; t0 < 0.03; t0 += 1 / 240.0)
+                for (int k = 0; k < 120 && (int)(t0 * Rate) + k < edge.Length; k++)
+                    edge[(int)(t0 * Rate) + k] += (float)(Math.Exp(-k / 14.0) * Math.Exp(-t0 * 60));
+            Add(air, Formants(edge, [(550, 4, 1), (1400, 6, 0.4)]), 0, 0.9);
+            var chest = Buf(0.15);
+            for (int i = 0; i < chest.Length; i++) chest[i] = (float)(Math.Sin(2 * Math.PI * 105 * T(i)) * (1 - Math.Exp(-T(i) * 600)) * Math.Exp(-T(i) * 30));
+            Add(air, chest, 0, 0.35);
+            Add(o, air, at, gain);
+        }
+        return Normalize(Reverb(Lowpass(Highpass(o, 120), 4000), 0.15, 0.78, 0.5), 0.6);
     }
 
     // ---------------------------------------------------------------- beds (looping)

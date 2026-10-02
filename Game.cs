@@ -15,15 +15,21 @@ record Node(string Id, string Name, int Branch, int Tier, int Cost, string? Requ
 // Deacons: automation granted by total Marrow earned. Each can be switched off.
 record Vow(string Id, string Name, int Marrow, string Effect);
 
+// The Deep: repeatable nodes under each finished branch, a sink for Marrow past the Lattice. Each rank multiplies Target
+// by Mult (compounding) and costs Base × 2^rank. Target "marrow" scales Marrow from Immurement.
+record DeepNode(string Id, string Name, int Branch, string Target, double Mult, int Base, string Effect);
+
 record Admission(string Id, string Name, string Line, Func<Game, bool> Earned);
 
 // Visitors and their Biddings live in assets/biddings.json so new ones need no code.
 // Objective types: toll, beat, buy (target = rite id), gather (amount = minutes of production), abstain, silence, mortify (amount = tier).
 record Objective(string Type, string? Target, double Amount, double Seconds);
 record Mod(string Target, double Mult, double Seconds = 0);
+// By: null for the Prophet's Biddings, "wife" for Ysmay's chapters (told in file order, one per visit).
 record Bidding(string Id, string Title, string[] Pages, string Ask, Objective Objective, Mod? Burden, Mod Boon, Mod? Curse,
-               string Accept, string Refuse, string Success, string Fail);
-record Visitor(string Name, string Personal, string[] Greeting, string Leaves);
+               string Accept, string Refuse, string Success, string Fail, string? By = null);
+// Spurned: the curse a visitor leaves after three refusals in a row (null: refusing stays free).
+record Visitor(string Name, string Personal, string[] Greeting, string Leaves, Mod? Spurned = null, string? SpurnedLine = null);
 
 // A boon or curse ticking down.
 class Effect { public string Target = "", Source = ""; public double Mult = 1, Left; }
@@ -125,6 +131,14 @@ static class Data
     ];
     public static Node Node(string id) => Lattice.First(n => n.Id == id);
 
+    public static readonly DeepNode[] Deep =
+    [
+        new("deep_flesh", "Flesh Upon Flesh", 0, "all", 1.25, 50, "All ×1.25"),
+        new("deep_bell", "The Bell Sinks Deeper", 1, "toll", 1.5, 50, "Tolls ×1.5"),
+        new("deep_bone", "Bone Upon Bone", 2, "marrow", 1.1, 50, "Marrow from Immurement ×1.1"),
+    ];
+    public static DeepNode DeepNode(string id) => Deep.First(d => d.Id == id);
+
     // --- Deacons ---
     public static readonly Vow[] Vows =
     [
@@ -187,12 +201,17 @@ static class Data
         new("bid1", "I Opened the Door", "He could not see me. He knew my name anyway.", g => g.Stats.BiddingsDone >= 1),
         new("bid10", "The Prophet's Errand-Boy", "Ten times he asked. Ten times I did it. I never asked why.", g => g.Stats.BiddingsDone >= 10),
         new("refuse5", "Bolted From Within", "Five times I left him knocking. He knocked the same way every time.", g => g.Stats.BiddingsRefused >= 5),
+        new("deep1", "Deeper Than Bone", "I dug past the Lattice. There was more of me down there, and none of it was clean.", g => g.Deep.Count > 0),
+        new("wife1", "She Knew Me", "The town forgets me every time. She never has. She has tried.", g => g.MetWife),
+        new("wife_end", "She Stopped Knocking", "She said she would wait at the end of everything. I have never been good at endings.", g => g.WifeDone()),
     ];
 
-    // --- Biddings, loaded once from assets/biddings.json (first element is the visitor) ---
-    public static Visitor? Prophet;
+    // --- Biddings, loaded once from assets/biddings.json ("_visitor" is the Prophet, "_wife" is Ysmay) ---
+    public static Visitor? Prophet, Wife;
     public static Bidding[] Biddings = [];
     public static Bidding? Bid(string id) => Biddings.FirstOrDefault(b => b.Id == id);
+    public static Bidding[] Chapters() => Biddings.Where(b => b.By == "wife").ToArray();
+    public static Visitor? Who(Bidding b) => b.By == "wife" ? Wife : Prophet;
 
     public static void LoadBiddings(string? path = null)
     {
@@ -201,9 +220,11 @@ static class Data
         var opts = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
         var all = doc.RootElement.EnumerateArray().ToList();
-        var visitor = all.Where(e => e.GetProperty("id").GetString() == "_visitor").ToList();
-        if (visitor.Count > 0) Prophet = System.Text.Json.JsonSerializer.Deserialize<Visitor>(visitor[0], opts);
-        Biddings = all.Where(e => e.GetProperty("id").GetString() != "_visitor").Select(e => System.Text.Json.JsonSerializer.Deserialize<Bidding>(e, opts)!).ToArray();
+        Visitor? Read(string id) => all.Where(e => e.GetProperty("id").GetString() == id)
+            .Select(e => System.Text.Json.JsonSerializer.Deserialize<Visitor>(e, opts)).FirstOrDefault();
+        Prophet = Read("_visitor");
+        Wife = Read("_wife");
+        Biddings = all.Where(e => !e.GetProperty("id").GetString()!.StartsWith('_')).Select(e => System.Text.Json.JsonSerializer.Deserialize<Bidding>(e, opts)!).ToArray();
     }
 
     public static Rite Rite(string id) => Rites.First(r => r.Id == id);
@@ -273,6 +294,7 @@ class Game
     public HashSet<string> OpenWounds = [];
 
     public HashSet<string> Lattice = [];
+    public Dictionary<string, int> Deep = new();  // Deep node id -> rank
     public HashSet<string> DeaconsOff = [];
     public double AutoImmureAt = 1;  // the Mason walls you in once pending Marrow reaches this × what you have
     public HashSet<string> Admitted = [];
@@ -313,6 +335,8 @@ class Game
         foreach (var id in Lattice)
             foreach (var (t, f) in Data.Node(id).Mods)
                 if (t == target) m *= f(this);
+        foreach (var (id, rank) in Deep)
+            if (Data.DeepNode(id).Target == target) m *= Math.Pow(Data.DeepNode(id).Mult, rank);
         if (Bidding != null && Data.Bid(Bidding.Id)?.Burden is { } burden && burden.Target == target) m *= burden.Mult;
         foreach (var e in Effects) if (e.Target == target) m *= e.Mult;
         return m;
@@ -456,7 +480,7 @@ class Game
     // --- Immurement ---
     public static int TotalFor(double lifetime, double gain = 1) => (int)Math.Floor(K * gain * Math.Sqrt(lifetime / Gate));
     public static double LifetimeFor(int marrow, double gain = 1) => Gate * Math.Pow(marrow / (K * gain), 2);
-    public double MarrowGain() => Knows("deeper_marrow") ? 1.25 : 1;
+    public double MarrowGain() => (Knows("deeper_marrow") ? 1.25 : 1) * MultFor("marrow");
     public int Pending() => Math.Max(0, TotalFor(Dolor.AllTime, MarrowGain()) - MarrowEarned);
     public bool CanImmure() => Dolor.Run >= Gate && Pending() >= 1 && !Mortifying();
     public bool Ready() => CanImmure() && (MarrowEarned == 0 || Pending() >= MarrowEarned);
@@ -474,7 +498,7 @@ class Game
         return gained;
     }
 
-    void ResetRun()
+    public void ResetRun()
     {
         bool vigil = Has("S8");
         Dolor.Amount = Deacon("deacon_tithe") ? 1e6 : 0;
@@ -514,6 +538,20 @@ class Game
         if (!CanLearn(n)) return false;
         MarrowSpent += n.Cost;
         Lattice.Add(n.Id);
+        Admit();
+        return true;
+    }
+
+    // --- the Deep ---
+    public int DeepRank(string id) => Deep.GetValueOrDefault(id);
+    public int DeepCost(DeepNode d) => (int)Math.Min(int.MaxValue, d.Base * Math.Pow(2, DeepRank(d.Id)));
+    public bool DeepOpen(DeepNode d) => Data.Lattice.Any(n => n.Branch == d.Branch && n.Tier == 5 && Knows(n.Id));
+    public bool CanDeepen(DeepNode d) => DeepOpen(d) && MarrowFree() >= DeepCost(d);
+    public bool Deepen(DeepNode d)
+    {
+        if (!CanDeepen(d)) return false;
+        MarrowSpent += DeepCost(d);
+        Deep[d.Id] = DeepRank(d.Id) + 1;
         Admit();
         return true;
     }
@@ -565,13 +603,23 @@ class Game
     }
 
     // --- Biddings ---
-    public bool MetProphet;
+    public bool MetProphet, MetWife;
+    public List<bool> WifeKept = new();  // one entry per chapter of Ysmay's told so far: kept or not. Its count is her next chapter.
+    public int RefusedInRow;   // the Prophet's refusals since you last accepted one
     public bool CanBeVisited() => Immurements > 0 && Bidding == null && !Mortifying() && Data.Biddings.Length > 0;
+    public bool WifeDone() => Data.Chapters().Length > 0 && WifeKept.Count >= Data.Chapters().Length;
 
+    // Once you have met the Prophet and been walled in twice, Ysmay takes every other knock until her story is told.
     public Bidding NextBidding()
     {
-        var pool = Data.Biddings.Where(b => b.Id != LastBidding).ToArray();
-        return (pool.Length > 0 ? pool : Data.Biddings)[Random.Shared.Next(pool.Length > 0 ? pool.Length : Data.Biddings.Length)];
+        var chapters = Data.Chapters();
+        bool wifeLast = LastBidding != null && Data.Bid(LastBidding)?.By == "wife";
+        if (Data.Wife != null && MetProphet && Immurements >= 2 && WifeKept.Count < chapters.Length && !wifeLast) return chapters[WifeKept.Count];
+        var all = Data.Biddings.Where(b => b.By == null).ToArray();
+        if (all.Length == 0) return chapters[Math.Min(WifeKept.Count, chapters.Length - 1)];
+        var pool = all.Where(b => b.Id != LastBidding).ToArray();
+        if (pool.Length == 0) pool = all;
+        return pool[Random.Shared.Next(pool.Length)];
     }
 
     public void Accept(Bidding b)
@@ -589,9 +637,21 @@ class Game
         double goal = o.Type == "gather" ? o.Amount * 60 * Math.Max(Dps(), 1) : o.Amount;
         Bidding = new ActiveBidding { Id = b.Id, Left = o.Seconds, Base = baseline, Goal = goal };
         LastBidding = b.Id;
+        if (b.By == null) RefusedInRow = 0;
     }
 
-    public void Refuse(Bidding b) { LastBidding = b.Id; Stats.BiddingsRefused++; Admit(); }
+    // True when this refusal spurns the Prophet: the third in a row leaves his curse (and the count starts again).
+    public bool Refuse(Bidding b)
+    {
+        LastBidding = b.Id;
+        if (b.By != null) return false;  // Ysmay just comes back with the same chapter
+        Stats.BiddingsRefused++;
+        Admit();
+        if (++RefusedInRow < 3 || Data.Prophet?.Spurned is not { } m) return false;
+        RefusedInRow = 0;
+        Effects.Add(new Effect { Target = m.Target, Mult = m.Mult, Left = m.Seconds, Source = "spurned" });
+        return true;
+    }
 
     // 0..1 toward the goal (abstain and silence are measured in time endured).
     public double BiddingProgress()
@@ -628,7 +688,8 @@ class Game
     {
         var m = kept ? b.Boon : b.Curse;
         if (m != null) Effects.Add(new Effect { Target = m.Target, Mult = m.Mult, Left = m.Seconds, Source = b.Id });
-        if (kept) Stats.BiddingsDone++; else Stats.BiddingsFailed++;
+        if (b.By == "wife") WifeKept.Add(kept);  // kept or not, her story moves on
+        else if (kept) Stats.BiddingsDone++; else Stats.BiddingsFailed++;
         Bidding = null;
         BiddingOutcome = (b.Id, kept);
         Admit();

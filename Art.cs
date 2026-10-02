@@ -3,7 +3,8 @@ using Raylib_cs;
 using static Raylib_cs.Raylib;
 
 // Generated textures, drawn at 2x with point filtering so they read as pixel art.
-// A PNG with the same name in assets/sprites/ replaces the generated one (wall, heart, heart_face, rite_<id>).
+// A PNG with the same name in assets/sprites/ replaces the generated one (wall, heart, heart_face, rite_<id>;
+// the Sexton, Prophet and Wife list their own frame names).
 static class Art
 {
     public const int Px = 2;  // screen pixels per art pixel
@@ -18,6 +19,7 @@ static class Art
         foreach (var r in Data.Rites) Icons[r.Id] = Get("rite_" + r.Id, () => Icon(r.Id));
         Sexton.Init();
         Prophet.Init();
+        Wife.Init();
     }
 
     public static Texture2D Get(string name, Func<Texture2D> generate)
@@ -50,6 +52,7 @@ static class Art
         foreach (var (id, t) in Icons) Save("rite_" + id, t);
         Sexton.Dump(Save);
         Prophet.Dump(Save);
+        Wife.Dump(Save);
         var icon = AppIcon(16); ExportImage(icon, Path.Combine(dir, "icon.png")); UnloadImage(icon);
         WriteIco(Path.Combine(dir, "icon.ico"));
     }

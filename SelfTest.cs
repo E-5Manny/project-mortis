@@ -197,6 +197,20 @@ static class SelfTest
         Console.WriteLine($"greedy run 2: {Ui.Duration(run2)} back to the gate ({(1 - run2 / run1) * 100:0}% faster)");
         Check(run2 < run1 * 0.7, "run 2 at least 30% faster");
 
+        // MORTIS_SIM_SAVE=<save.json>: greedy runs from that save's persistent state, each to the Ready point (pending ≥ earned).
+        if (Environment.GetEnvironmentVariable("MORTIS_SIM_SAVE") is { } simSave)
+        {
+            var v = SaveFile.Deserialize<Game>(File.ReadAllText(simSave))!;
+            v.Migrate();
+            for (int i = 0; i < 4; i++)
+            {
+                v.ResetRun();
+                v.Stats.RunTimeSec = 0;
+                double t = Greedy(v, out v, ready: true);
+                Console.WriteLine($"veteran run: {Ui.Duration(t)} to Ready, {v.MarrowEarned} Marrow, dps {Ui.Num(v.Stats.BestDps)}");
+            }
+        }
+
         Console.WriteLine(_fails == 0 ? "selftest OK" : $"{_fails} failure(s)");
         return _fails;
     }
@@ -204,15 +218,15 @@ static class SelfTest
     // Buys whatever pays back fastest (waiting included), tolls every 5s. Returns seconds to the first Immurement.
     // MORTIS_SIM_TIMELINE=1 prints when each Rite and Sacrament first arrives (for balancing).
     static readonly bool Timeline = Environment.GetEnvironmentVariable("MORTIS_SIM_TIMELINE") == "1";
-    static double Greedy(Game g, out Game result, double stopAtRun = 0)
+    static double Greedy(Game g, out Game result, double stopAtRun = 0, bool ready = false)
     {
         const double dt = 0.1;
         double t = 0, sinceToll = 0;
         var seen = new HashSet<string>();
         void Note(string what) { if (Timeline && seen.Add(what)) Console.WriteLine($"  {Ui.Duration(t),9}  {what}  (dps {Ui.Num(g.Dps())})"); }
-        while (t < 10 * 3600)
+        while (t < 20 * 3600)
         {
-            if (stopAtRun > 0 ? g.Dolor.Run >= stopAtRun : g.CanImmure()) break;
+            if (stopAtRun > 0 ? g.Dolor.Run >= stopAtRun : ready ? g.Ready() : g.CanImmure()) break;
             g.Tick(dt); t += dt; sinceToll += dt;
             if (sinceToll >= 5 && g.Tolls > 0) { g.Toll(false); sinceToll = 0; }
 

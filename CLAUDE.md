@@ -115,6 +115,67 @@ Never add anything that pops up or grabs focus, and nothing makes noise while th
 - **Next on the roadmap:** v0.6 Ordeals, then v0.7 The Unnaming, a second prestige layer. v0.7 needs a mantissa/exponent number type before values pass 1e300; it's all `double` today.
 - **Known open question:** veteran and late-game pacing. The sim only covers runs 1 and 2, but players with hundreds of Marrow plus the full Lattice and Deacons will be much faster. Tune with the timeline, starting from a save at that level.
 
+## Work in progress (uncommitted, paused 2026-10-02 on top of 7d60b51)
+
+The user picked two things: a **Marrow sink** for late-game tuning, and **expanded visitors** (the Sexton's wife plus refusal consequences). Ordeals are deferred.
+
+**Ordeals, when they come:** the user chose "Stripped, but keep Deacons":
+- inside an Ordeal there's no Marrow bonus, Lattice, Wounds or other Vows;
+- the Deacons still buy, but the Tithe's 1M head start is off;
+- goals are fixed, tuned to about 1h each with the greedy sim.
+
+**Veteran measurement:**
+- The user's real save has 1294 Marrow, 5 Immurements, the full Lattice and a fastest run of 72s.
+- Greedy runs from it reach Ready in 14m, 9m, 13m and 21m, doubling Marrow each time, and each run is about 1.6× longer than the last. The sink should keep that self-limiting.
+- `MORTIS_SIM_SAVE=<copy of save.json> Mortis.exe --selftest` prints this. A copy of the real save is in the session scratchpad. Never point it at the real save.
+
+**Done (the build was not re-checked after the last `Game.cs` edit):**
+- `Game.cs`:
+  - **The Deep:** `DeepNode` records, `Data.Deep` and `Game.Deep`, which maps id to rank. `DeepCost` is Base × 2^rank, `DeepOpen` needs the branch's tier-5 node, and `Deepen` buys a rank. Ranks multiply through `MultFor`.
+  - **Deep nodes:**
+    - `deep_flesh`: All ×1.25 per rank.
+    - `deep_bell`: Tolls ×1.5 per rank.
+    - `deep_bone`: target `marrow`, ×1.1 per rank. `MarrowGain()` multiplies in `MultFor("marrow")`.
+  - **Bidding and Visitor records:** `Bidding.By` is `"wife"` for Ysmay's chapters. `Visitor` has `Spurned` and `SpurnedLine`. `Data.Wife` loads from `"_wife"`, and `Data.Chapters()` and `Data.Who(b)` are new.
+  - **New save fields:** `Deep`, `MetWife`, `WifeKept` (a `List<bool>` with one entry per chapter told; its count is her next chapter), and `RefusedInRow`.
+  - **`NextBidding()`:** Ysmay takes every other knock once `MetProphet && Immurements >= 2`, until her chapters run out.
+  - **`Refuse()`:** returns true on the Prophet's third refusal in a row, adds his `Spurned` curse, and resets the count. Refusing Ysmay costs nothing and keeps her chapter.
+  - **`EndBidding`:** advances her chapter whether it was kept or failed. Her Biddings don't count in the Prophet's stats.
+  - **Admissions:** `deep1`, `wife1` and `wife_end`.
+  - **`ResetRun()`:** now public, because the veteran sim calls it.
+- `assets/biddings.json`:
+  - The Prophet now has `spurned` (All ×0.8 for 900s) and a `spurnedLine`.
+  - `_wife` is "Ysmay", with a greeting and a leaves line.
+  - Her five chapters: `wife_quiet` (silence 5m), `wife_wick` (abstain 8m), `wife_lash` (mortify within 1h), `wife_breaths` (9 on the beat in 10m) and `wife_street` (silence 15m, the last visit). She has boons but no curses.
+- `Wife.cs`: her 64×80 portrait, with frames `wife_0` and `wife_1`. It has the same API as `Prophet`, and `Art.cs` initialises and dumps it.
+- `Audio.cs`: the new sounds `breath` (her voice while dialog types out) and `cough`. The user still has to listen to both.
+- `SelfTest.cs`: the `MORTIS_SIM_SAVE` veteran sim. `Greedy(..., ready: true)` stops at `Ready()`, and the time cap is now 20h.
+
+**To do next:**
+1. **`Program.cs`, visits.** Replace the `Data.Prophet` and `Prophet.*` uses with the visitor at the door (`Data.Who(AtDoor)`):
+   - the card's face, name and "He/She will wait";
+   - the leaves line;
+   - the dialog portrait (give `Dialog` a `By`), and `breath` instead of `murmur` while she speaks;
+   - play `cough` when her dialog opens;
+   - show the greeting on the first visit, using `MetWife`;
+   - the turned-away log line.
+2. **`Program.cs`, refusal.**
+   - When `G.RefusedInRow == 2`, the choice page warns that refusing the Prophet again leaves his curse.
+   - When `Refuse` returns true, show the `SpurnedLine` plus `ModText`, and set `VisitIn = 300 + rand(300)`.
+3. **`Program.cs`, long lines.** Success and fail lines run past one line in the whisper bar, where `Fit` truncates them; this affects the Prophet's too. Wrap `Override` onto two lines, then check it in a screenshot.
+4. **`Program.cs`, Ledger.** Under the stanzas in the Account view, add "What Ysmay Said": each told chapter's title, then its success or fail line, according to `WifeKept`.
+5. **`Program.cs`, the Deep.** Add a 4th Immure sub-tab, "The Deep", shown once any branch is complete. Lay out its rows like `VowsView`: name, effect, rank, current total, and a Deepen button with its cost.
+6. **`SelfTest.cs`, rule checks:**
+   - Deep cost, effects, and that a branch must be complete first;
+   - `marrow` gain;
+   - wife alternation and chapters advancing;
+   - refusing her keeps the chapter;
+   - the third refusal of the Prophet curses, and accepting resets the count;
+   - the new save fields round-trip.
+7. **`SelfTest.cs`, veteran guard.** Build a synthetic veteran (about 1300 Marrow and the full Lattice), let the sim buy Deep ranks between runs, and assert a band on run times. Tune the Deep base cost and growth: runs should still lengthen, only more gently.
+8. **Docs.** Update `DESIGN.md` (glossary, roadmap) and this file (the file table gets `Wife.cs`; the save keys get `Deep` and `WifeKept`). Then remove this section.
+9. **Review.** Run a review pass, take screenshots with a fixture save (`MORTIS_SAVE_DIR`, with `MORTIS_VISIT_IN` set low), and ask the user to listen to `breath` and `cough`.
+
 ## Working with this user
 
 - **Language:** the user writes English, but their Windows is Portuguese (pt-BR), so tool output arrives in Portuguese.
