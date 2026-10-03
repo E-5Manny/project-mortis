@@ -29,6 +29,12 @@ static class SaveFile
         catch (Exception) { return null; }
     }
 
+    // Copies save.json aside as save.<why>-<unixtime>.json before something replaces it on purpose (New Game).
+    public static void KeepCopy(string why)
+    {
+        if (File.Exists(Main)) File.Copy(Main, Path.Combine(Dir, $"save.{why}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}.json"));
+    }
+
     public static void Save<T>(T state)
     {
         Directory.CreateDirectory(Dir);

@@ -5,7 +5,7 @@ using Raylib_cs;
 using static Raylib_cs.Raylib;
 using static Ui;
 
-static class App
+static partial class App
 {
     static Game G = new();
 
@@ -152,7 +152,7 @@ static class App
 
         var clock = Stopwatch.StartNew();
         double last = 0;
-        while (!WindowShouldClose())
+        while (!WindowShouldClose() && !Quit)
         {
             double now = clock.Elapsed.TotalSeconds, dt = now - last;
             last = now;
@@ -174,7 +174,7 @@ static class App
 
             SetTargetFPS(IsWindowFocused() ? G.Settings.FpsCap : 10);
             UpdateView();
-            RunFrame((float)Math.Min(dt, 0.1));
+            if (InMenu) MenuFrame((float)Math.Min(dt, 0.1)); else RunFrame((float)Math.Min(dt, 0.1));
         }
         Save();
         CloseWindow();
@@ -186,6 +186,7 @@ static class App
     {
         if (SaveFile.Load<Game>() is not { } g) return;
         G = g;
+        HasSave = true;
         G.Migrate();
         double away = (DateTime.UtcNow - G.LastSeenUtc.ToUniversalTime()).TotalSeconds;
         var result = G.ApplyAway(away);
@@ -280,7 +281,7 @@ static class App
             Audio.Play("chime", 0.4f, 0.6f);
         }
         if (G.AutoImmureDue() && SeqT < 0 && Away == null && RevealWound == null && Talk == null) StartImmure();
-        bool overlay = Away != null || RevealWound != null || SeqT >= 0 || Talk != null;
+        bool overlay = Away != null || RevealWound != null || SeqT >= 0 || Talk != null || DevOpen;
         UpdateOmen(dt, overlay);
         UpdateVisit(dt, overlay);
         if (G.BiddingOutcome is { } outcome && Data.Bid(outcome.id) is { } done)
@@ -292,7 +293,8 @@ static class App
             Audio.Play(outcome.kept ? "chime" : "thunk", 0.7f, outcome.kept ? 0.75f : 1f);
             Save();
         }
-        if (overlay && IsKeyPressed(KeyboardKey.Escape)) SetHidden(true);
+        if (IsKeyPressed(KeyboardKey.F1) && DevMode) DevOpen = !DevOpen;
+        if (IsKeyPressed(KeyboardKey.Escape)) { if (DevOpen) DevOpen = false; else ToMenu(); }  // the panic key hides; Esc is the menu, as in any game
         if (!overlay) Keys();
 
         if (SextonView) Sexton.Render(dt, G.Mortifying(), (float)G.MortifyProgress(), G.Mortifications);
@@ -333,6 +335,7 @@ static class App
         else if (RevealWound != null) WoundOverlay();
         else if (Talk != null) { Ui.Blocked = false; DialogOverlay(dt); }
         if (SeqT >= 0) ImmureSequence(dt);
+        if (DevOpen) { Ui.Blocked = false; DevPanel(); }
         EndMode2D();
         EndTextureMode();
 
@@ -364,7 +367,6 @@ static class App
 
     static void Keys()
     {
-        if (IsKeyPressed(KeyboardKey.Escape)) SetHidden(true);
         if (IsKeyPressed(KeyboardKey.Space)) DoToll();
         if (IsKeyPressed(KeyboardKey.B)) G.Settings.BuyMode = G.Settings.BuyMode switch { "x1" => "x10", "x10" => "max", _ => "x1" };
         if (IsKeyPressed(KeyboardKey.S)) SextonView = !SextonView;
@@ -418,27 +420,30 @@ static class App
         if (onBeat) AddLog($"Tolled in time: +{Num(v)}");
     }
 
+    // The beat rings and a crown of thorns in rusted iron, around the heart (here and on the menu).
+    static void Crown(Vector2 c, Color sigil, float rot)
+    {
+        foreach (var r in Rings)
+            DrawCircleLinesV(c, 40 + 50 * (r / 0.8f), ColorAlpha(IchorBright, 0.5f * (1 - r / 0.8f)));
+        DrawCircleGradient(c, 78, ColorAlpha(Ichor, 0.35f), ColorAlpha(Ichor, 0));
+        DrawPolyLinesEx(c, 9, 72, rot, 3, ColorAlpha(Bg0, 0.8f));
+        DrawPolyLinesEx(c, 9, 72, rot, 2, sigil);
+        DrawPolyLinesEx(c, 9, 62, -rot + 20, 1, ColorAlpha(sigil, 0.35f));
+        for (int i = 0; i < 9; i++)
+        {
+            float a = (rot + i * 40) * MathF.PI / 180, w = 0.09f;
+            Vector2 Dir(float ang) => new(MathF.Cos(ang), MathF.Sin(ang));
+            Art.Tri(c + Dir(a) * 88, c + Dir(a - w) * 70, c + Dir(a + w) * 70, sigil);              // outward thorn
+            Art.Tri(c + Dir(a + 0.35f) * 60, c + Dir(a + 0.2f - w) * 72, c + Dir(a + 0.2f + w) * 72, ColorAlpha(sigil, 0.7f));  // inward barb
+        }
+    }
+
     static void HeartPanel(float dt)
     {
         var sigil = Lerp(Accent, BoneWhite, ReadyGlow);
         float rot = G.Settings.Quiet ? 0 : T * 0.02f * 57.3f;
 
-        // expanding beat rings
-        foreach (var r in Rings)
-            DrawCircleLinesV(HeartC, 40 + 50 * (r / 0.8f), ColorAlpha(IchorBright, 0.5f * (1 - r / 0.8f)));
-
-        // a crown of thorns in rusted iron
-        DrawCircleGradient(HeartC, 78, ColorAlpha(Ichor, 0.35f), ColorAlpha(Ichor, 0));
-        DrawPolyLinesEx(HeartC, 9, 72, rot, 3, ColorAlpha(Bg0, 0.8f));
-        DrawPolyLinesEx(HeartC, 9, 72, rot, 2, sigil);
-        DrawPolyLinesEx(HeartC, 9, 62, -rot + 20, 1, ColorAlpha(sigil, 0.35f));
-        for (int i = 0; i < 9; i++)
-        {
-            float a = (rot + i * 40) * MathF.PI / 180, w = 0.09f;
-            Vector2 Dir(float ang) => new(MathF.Cos(ang), MathF.Sin(ang));
-            Art.Tri(HeartC + Dir(a) * 88, HeartC + Dir(a - w) * 70, HeartC + Dir(a + w) * 70, sigil);              // outward thorn
-            Art.Tri(HeartC + Dir(a + 0.35f) * 60, HeartC + Dir(a + 0.2f - w) * 72, HeartC + Dir(a + 0.2f + w) * 72, ColorAlpha(sigil, 0.7f));  // inward barb
-        }
+        Crown(HeartC, sigil, rot);
 
         // the organ: throbs on the beat, breathes between, a face pushes through when He is ready (or when it wants to)
         float beat = BeatAnim < 0.18f ? MathF.Sin(MathF.PI * BeatAnim / 0.18f) : 0;
@@ -1233,6 +1238,11 @@ static class App
         OmenIn -= dt;
         if (OmenIn > 0) return;
         OmenIn = 300 + Random.Shared.Next(600);
+        SpawnOmen();
+    }
+
+    static void SpawnOmen()
+    {
         OmenAge = 0;
         OmenPos = OmenSpots[Random.Shared.Next(OmenSpots.Length)];
         OmenKindNow = G.OmenKind();
@@ -1310,23 +1320,42 @@ static class App
 
     static void SettingsView()
     {
+        SettingsList(242, 128);
+        if (TextButton(new Rectangle(242, 453, 120, 26), "Main menu", 16)) ToMenu();
+        if (Hover(new Rectangle(242, 453, 120, 26))) HoverText = "Saves, and goes back to the main menu (Esc does too). He keeps beating behind it.";
+        if (HoldButton(new Rectangle(376, 450, 240, 32), "Hold 3s to erase everything", 3f, ref HoldReset, true, Crimson))
+        {
+            G = new Game();
+            ResetScreens();
+            ApplyWindow();
+            Save();
+        }
+    }
+
+    // Every setting, one row each, at x, y (layout pixels; the buttons sit 304 to the right). Here and on the menu.
+    static void SettingsList(float x, float y)
+    {
         var set = G.Settings;
-        float y = 128;
         bool Row(string label, string value, bool active)
         {
-            Text(label, 242, y + 2, 13, Bone);
-            bool hit = TextButton(new Rectangle(546, y, 70, 18), value, 13, true, active);
-            y += 20;
+            Text(label, x, y + 2, 13, Bone);
+            bool hit = TextButton(new Rectangle(x + 304, y, 70, 18), value, 13, true, active);
+            y += 19;
             return hit;
         }
-        bool Toggle(string label, bool on) => Row(label, on ? "On" : "Off", on) ? !on : on;
+        bool Toggle(string label, bool on)
+        {
+            on = CheckBox(new Rectangle(x - 4, y - 1, 382, 19), new Rectangle(x + 331, y + 1, 16, 16), label, on);
+            y += 19;
+            return on;
+        }
         set.Quiet = Toggle("Quiet mode (no shake, flash or glitches)", set.Quiet);
         set.IdleDim = Toggle("Dim after a minute without input", set.IdleDim);
-        string[] views = ["630×520", "945×780", "Full screen"];
-        int view = set.Fullscreen ? 2 : set.Large ? 1 : 0;
-        if (Row("Window (F11 toggles full screen)", views[view], view > 0))
+        bool full = Toggle("Full screen (F11)", set.Fullscreen);
+        if (full != set.Fullscreen) { set.Fullscreen = full; ApplyWindow(); }
+        if (Row(set.Fullscreen ? "Window size, outside full screen" : "Window size", set.Large ? "945×780" : "630×520", false))
         {
-            (set.Large, set.Fullscreen) = view switch { 0 => (true, false), 1 => (true, true), _ => (false, false) };
+            set.Large = !set.Large;
             ApplyWindow();
         }
         if (Row("Frame cap while focused", set.FpsCap + " fps", false)) set.FpsCap = set.FpsCap == 30 ? 20 : 30;
@@ -1340,23 +1369,14 @@ static class App
         set.Visitors = Toggle("Visitors at the door", set.Visitors);
         var names = Audio.Names.ToArray();
         if (Row($"Test sounds: {names[SoundTest % names.Length]}", "Play", false)) { Audio.Audition(names[SoundTest % names.Length]); SoundTest++; }
-        y += 6;
+        y += 4;
 
-        Text($"Panic key: {Panic.KeyName} hides and silences, from anywhere", 242, y, 13, BoneDim);
-        if (!Panic.Registered) Text("Unavailable: another app owns it. Esc minimizes instead.", 242, y + 16, 13, CantAfford);
-        y += Panic.Registered ? 18 : 34;
-        Text("Esc hides · Space tolls · S Sexton · M mute · B buy mode · 1-5 tabs · F11", 242, y, 13, BoneDim);
+        if (Panic.Registered) Text($"Panic key: {Panic.KeyName} hides and silences, from anywhere", x, y, 13, BoneDim);
+        else Text($"Panic key {Panic.KeyName}: unavailable, another app owns it", x, y, 13, CantAfford);
         y += 18;
-        Text(Fit("Save: " + SaveFile.Dir, 13, 380), 242, y, 13, BoneDim);
-
-        if (HoldButton(new Rectangle(310, 444, 240, 34), "Hold 3s to erase everything", 3f, ref HoldReset, true, Crimson))
-        {
-            G = new Game();
-            Log.Clear();
-            Tab = 0;
-            ApplyWindow();
-            Save();
-        }
+        Text("Esc menu · Space tolls · S Sexton · M mute · B buy mode · 1-5 tabs · F11", x, y, 13, BoneDim);
+        y += 18;
+        Text(Fit("Save: " + SaveFile.Dir, 13, 374), x, y, 13, BoneDim);
     }
 
     // ---------------------------------------------------------------- Wounds

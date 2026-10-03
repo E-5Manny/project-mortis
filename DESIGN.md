@@ -97,7 +97,7 @@ You are **the Sexton of the Last Bell**. You rang the bell that called the knife
   - Offline time uses UTC, clamped to [0, cap]. A PC sleep longer than 60 s counts as time away.
 - **Panic key:**
   - `Ctrl+Alt+Shift+Q`, registered system-wide with `RegisterHotKey` on its own thread, so it works while the game is unfocused. It hides and restores the window, and a hidden window is also gone from the taskbar and Alt-Tab.
-  - `Esc` hides the window while it has focus.
+  - `Esc` opens the main menu; only the panic key hides the window.
   - If another app owns the key combination, hiding falls back to minimizing.
   - The simulation keeps running while hidden.
 

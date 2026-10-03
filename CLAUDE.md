@@ -37,6 +37,9 @@ A grimdark desktop idle game (C# / .NET 10 + Raylib-cs 8.1.0, which wraps raylib
 |---|---|
 | `Game.cs` | All data tables (`Data`: Rites, Sacraments, Wounds, Lattice nodes, Vows, Admissions, Stanzas) and all rules (`Game`). It has **no raylib**, so the self-test can drive it headless. |
 | `Program.cs` | `App`: the main loop, every screen, tab and overlay, input, and save timing. |
+| `Menu.cs` | The main menu (`partial class App`): Continue, New Game, Settings, Dev Mode, Exit. It opens on launch and from Ledger → Settings → Main menu. The game keeps ticking behind it, as while hidden; Biddings, visitors and Omens wait, because they only move in `RunFrame`. New Game keeps the Settings and first copies the old save to `save.before-new-game-<unixtime>.json`. Esc backs out of a panel, then resumes. |
+| `DevMode.cs` | Dev Mode: cheats for testing (Dolor, Rites, Sacraments, Marrow and the Lattice, Ready to Immure, time away, Wounds, visitors, Biddings, Omens), from the menu or with F1 over the game. Shown only in Debug builds or with `MORTIS_DEV=1`. The rules side is the `Dev…` methods at the end of `Game`. |
+| `MenuArt.cs` | The menu's backdrop (`title`): the nave of His ribs over the roofs of Ashkirk, the bell rope and chains running up from where the heart hangs. The heart, its crown and the town's windows are drawn live over it. |
 | `Ui.cs` | Palette, fonts (`Face.Title` blackletter / `Face.Body` serif), immediate-mode widgets, number and time formatting. |
 | `Fx.cs` | Atmosphere: ash, candles, the ichor drip and pool, blood seeps, flies, maggots, floating numbers. |
 | `Art.cs` | Generated pixel-art textures (the wall, the heart, the heart with a face, Rite icons), with PNG overrides and the dump. |
@@ -105,7 +108,7 @@ A grimdark desktop idle game (C# / .NET 10 + Raylib-cs 8.1.0, which wraps raylib
 ## Art and sound conventions
 
 - **Art is generated at half resolution** and drawn at 2× (3× for the Sexton) with point filtering, so it reads as 16-bit pixel art: 4-tone ramps, ordered dither, an ink outline.
-  - Any PNG in `assets/sprites/` with the generated texture's name replaces it: `wall`, `heart`, `heart_face`, `rite_<id>`, `sexton_whip_0..5`, `sexton_idle_0..1`, `prophet_0..1`, `wife_0..1`, `icon` (16×16, the window icon), and `frame`. The frame override is scaled to cover the screen with the game drawn over its middle; `--dump-art` writes the 1920×1080 version (640×360 art pixels, the game in 162..478 × 50..310) as a template.
+  - Any PNG in `assets/sprites/` with the generated texture's name replaces it: `wall`, `heart`, `heart_face`, `rite_<id>`, `title` (315×260, the menu's backdrop), `sexton_whip_0..5`, `sexton_idle_0..1`, `prophet_0..1`, `wife_0..1`, `icon` (16×16, the window icon), and `frame`. The frame override is scaled to cover the screen with the game drawn over its middle; `--dump-art` writes the 1920×1080 version (640×360 art pixels, the game in 162..478 × 50..310) as a template.
   - The exe's icon is the checked-in `assets\icon.ico`. `--dump-art` writes a fresh `icon.ico` from `Art.AppIcon`; copy it over to change the exe's icon.
   - Keep that override hook when adding art. The user plans real pixel art later.
 - **Sound is synthesized:** filters, a Freeverb-style reverb, bell partials, formant voices.
@@ -118,7 +121,7 @@ A grimdark desktop idle game (C# / .NET 10 + Raylib-cs 8.1.0, which wraps raylib
 
 The user plays at work, so the game has to stay safe to have open:
 - the panic key Ctrl+Alt+Shift+Q hides the window from anywhere, including the taskbar and Alt-Tab, saves, and silences all audio;
-- Esc hides the window while it has focus, and M mutes;
+- Esc opens the main menu (and resumes from it), as in any game; only the panic key hides. M mutes;
 - volume defaults to 50%, and screams, Omens and silent-when-unfocused are all toggles.
 
 Never add anything that pops up or grabs focus, and nothing makes noise while the window is hidden. Full screen is borderless (not exclusive), so Alt-Tab, Esc and the panic key still work; it only starts in full screen if the player left it that way. Sound while it's merely unfocused is allowed (ambience, screams, the visitor's handbell), but it must go through `Audio.Play`, so the user's Silent-when-unfocused setting can mute it.

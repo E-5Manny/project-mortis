@@ -151,6 +151,25 @@ static class Ui
         return hit;
     }
 
+    // A labelled checkbox: a recess that holds a gold check when on. The whole row flips it. Returns the new value.
+    public static bool CheckBox(Rectangle row, Rectangle box, string label, bool on)
+    {
+        bool hover = Hover(row);
+        if (hover) DrawRectangleRec(row, ColorAlpha(BgHover, 0.6f));
+        Text(label, row.X + 4, row.Y + 3, 13, Bone);
+        Frame(box, on ? BgHover : Bg2);
+        DrawRectangleLinesEx(box, 1, on ? Gold : hover ? ColorAlpha(Crimson, 0.9f) : ColorAlpha(BoneDim, 0.6f));
+        if (on)
+        {
+            var a = new Vector2(box.X + 3.5f, box.Y + 8.5f);
+            var b = new Vector2(box.X + 7, box.Y + 12);
+            var c = new Vector2(box.X + 13, box.Y + 4);
+            DrawLineEx(a, b, 2, GoldBright);
+            DrawLineEx(b, c, 2, GoldBright);
+        }
+        return Pressed(row) ? !on : on;
+    }
+
     // Hold-to-confirm: fills over `seconds` while held; returns true on completion. `held` is the caller's progress field.
     public static bool HoldButton(Rectangle r, string label, float seconds, ref float held, bool enabled, Color fillColor)
     {

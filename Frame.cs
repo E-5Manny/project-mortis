@@ -20,19 +20,19 @@ static class Frame
     static readonly List<(Vector2 top, int len)> Runs = new();  // blood runs that a fresh drop slides down now and then
 
     static Color C(int r, int g, int b) => new(r, g, b, 255);
-    static readonly Color Ink = C(8, 5, 5);
-    static readonly Color[] StoneR = [C(15, 13, 12), C(27, 24, 21), C(41, 37, 32), C(57, 51, 44)];
-    static readonly Color[] MoldR = [C(20, 21, 15), C(32, 34, 22), C(46, 48, 30), C(62, 64, 40)];
-    static readonly Color[] BloodR = [C(24, 4, 5), C(48, 7, 8), C(78, 12, 12), C(108, 22, 20)];
-    static readonly Color[] FleshR = [C(36, 9, 12), C(68, 18, 22), C(104, 34, 36), C(138, 62, 58)];
-    static readonly Color[] RawR = [C(54, 5, 9), C(100, 14, 18), C(146, 34, 34), C(186, 82, 74)];
-    static readonly Color[] BruiseR = [C(38, 22, 32), C(66, 40, 54), C(98, 74, 64), C(132, 116, 78)];
-    static readonly Color[] VeinR = [C(22, 8, 20), C(40, 14, 34), C(56, 22, 46), C(74, 34, 58)];
-    static readonly Color[] RotR = [C(34, 30, 16), C(62, 56, 26), C(94, 84, 40), C(128, 116, 62)];
-    static readonly Color[] BoneR = [C(40, 33, 24), C(94, 82, 58), C(146, 130, 96), C(184, 168, 128)];
-    static readonly Color[] IronR = [C(14, 12, 11), C(34, 28, 25), C(58, 46, 38), C(92, 62, 44)];
-    static readonly Color[] GlowR = [C(9, 6, 5), C(26, 15, 10), C(56, 32, 17), C(98, 60, 28)];
-    static readonly Color[] WaxR = [C(92, 80, 56), C(140, 124, 88), C(180, 164, 120), C(208, 194, 150)];
+    internal static readonly Color Ink = C(8, 5, 5);
+    internal static readonly Color[] StoneR = [C(15, 13, 12), C(27, 24, 21), C(41, 37, 32), C(57, 51, 44)];
+    internal static readonly Color[] MoldR = [C(20, 21, 15), C(32, 34, 22), C(46, 48, 30), C(62, 64, 40)];
+    internal static readonly Color[] BloodR = [C(24, 4, 5), C(48, 7, 8), C(78, 12, 12), C(108, 22, 20)];
+    internal static readonly Color[] FleshR = [C(36, 9, 12), C(68, 18, 22), C(104, 34, 36), C(138, 62, 58)];
+    internal static readonly Color[] RawR = [C(54, 5, 9), C(100, 14, 18), C(146, 34, 34), C(186, 82, 74)];
+    internal static readonly Color[] BruiseR = [C(38, 22, 32), C(66, 40, 54), C(98, 74, 64), C(132, 116, 78)];
+    internal static readonly Color[] VeinR = [C(22, 8, 20), C(40, 14, 34), C(56, 22, 46), C(74, 34, 58)];
+    internal static readonly Color[] RotR = [C(34, 30, 16), C(62, 56, 26), C(94, 84, 40), C(128, 116, 62)];
+    internal static readonly Color[] BoneR = [C(40, 33, 24), C(94, 82, 58), C(146, 130, 96), C(184, 168, 128)];
+    internal static readonly Color[] IronR = [C(14, 12, 11), C(34, 28, 25), C(58, 46, 38), C(92, 62, 44)];
+    internal static readonly Color[] GlowR = [C(9, 6, 5), C(26, 15, 10), C(56, 32, 17), C(98, 60, 28)];
+    internal static readonly Color[] WaxR = [C(92, 80, 56), C(140, 124, 88), C(180, 164, 120), C(208, 194, 150)];
     static readonly Color DropDark = C(96, 10, 12), DropWet = C(170, 28, 26);
 
     public static void Draw(Vector2 at, float scale, float t, float beat)
@@ -97,7 +97,7 @@ static class Frame
     static readonly int[] Bayer = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 
     // Picks a tone from a ramp, dithering between neighbours: ordered for worked surfaces, noise for living ones.
-    static Color Ramp(Color[] r, float v, int x, int y, bool organic = false)
+    internal static Color Ramp(Color[] r, float v, int x, int y, bool organic = false)
     {
         float f = Math.Clamp(v, 0, 0.999f) * (r.Length - 1);
         int i = (int)f;

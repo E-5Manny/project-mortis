@@ -745,4 +745,39 @@ class Game
 
     public double Bpm() => Mortifying() ? 30 : Math.Min(140, 40 + 12 * Math.Log10(Dps() + 1));  // it starves while he is away
     public double Souls() => Math.Floor(Dolor.AllTime / 1000);
+
+    // --- Dev Mode: shortcuts for testing, never reached in play ---
+    public void DevGain(double v) { Gain(v); Unlocks(); Admit(); }
+    public void DevRites(int add)
+    {
+        foreach (var r in Data.Rites) { Revealed.Add(r.Id); if (add > 0) Owned[r.Id] = N(r.Id) + add; }
+        Unlocks();
+        Admit();
+    }
+    public void DevSacraments(bool buy)
+    {
+        foreach (var s in Data.Sacraments) { SacUnlocked.Add(s.Id); if (buy) SacBought.Add(s.Id); }
+        Admit();
+    }
+    public void DevMarrow(int m) { MarrowEarned += m; Admit(); }
+    public void DevLattice() { foreach (var n in Data.Lattice) Lattice.Add(n.Id); Admit(); }  // free: no Marrow is spent
+    // Enough Dolor for the gate and for as much Marrow again as is held, so Ready() holds.
+    public void DevReady()
+    {
+        AbandonMortify();
+        double need = Math.Max(Gate - Dolor.Run, LifetimeFor(2 * MarrowEarned + 1, MarrowGain()) - Dolor.AllTime);
+        if (need > 0) DevGain(need * 1.001 + 1);
+    }
+    // Ends the scourge now if he is at it; otherwise a Deep-tier roll, as if he had been.
+    public void DevWound()
+    {
+        if (Mortifying()) MortifyLeft = 0; else MortifyTier = 2;
+        CompleteMortify();
+    }
+    public bool DevEndBidding(bool kept)
+    {
+        if (Bidding == null || Data.Bid(Bidding.Id) is not { } b) return false;
+        EndBidding(b, kept);
+        return true;
+    }
 }

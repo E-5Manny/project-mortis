@@ -58,6 +58,15 @@ static class SelfTest
         Check(back.N("kneeler") == 10 && back.Has("S8") && back.MarrowEarned == 7 && back.Settings.BuyMode == "max"
               && Near(back.Dolor.AllTime, h.Dolor.AllTime), "save round trip");
 
+        // Dev Mode cheats do what their buttons say
+        var dv = new Game { MarrowEarned = 40 };
+        dv.DevReady();
+        Check(dv.Ready(), "DevReady makes the run ready");
+        dv.DevWound();
+        Check(dv.NewWound != null && dv.Wounds.Count == 1 && !dv.Mortifying(), "DevWound gives a wound");
+        dv.DevSacraments(true);
+        Check(Data.Sacraments.All(s => dv.Has(s.Id)), "DevSacraments buys every Sacrament");
+
         // Immurement keeps S8 and lifetime, resets the run
         var im = new Game();
         im.Dolor.Run = im.Dolor.AllTime = Game.Gate;
